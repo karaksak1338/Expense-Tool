@@ -378,7 +378,7 @@ const DetailView = ({ claim, owner, currentUser, entity, onBack, onStatusUpdate,
   );
 };
 
-const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes, receipts, onCancel, onSave, onDraft, onPreview }) => {
+const ClaimForm = ({ user, users, claim, entities, projects, departments, expenseTypes, receipts, onCancel, onSave, onDraft, onPreview }) => {
   const availableEntities = entities || [];
   const [selectedEntityId, setSelectedEntityId] = useState(claim?.entityId || (availableEntities.length === 1 ? availableEntities[0].id : ''));
   const activeEntity = availableEntities.find(e => e.id === selectedEntityId) || {};
@@ -431,6 +431,14 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
     });
   }, [formData, mandatory, expenseTypes, activeEntity, availableCurrencies]);
 
+  const resolvedApprover = useMemo(() => {
+    if (!selectedEntityId) return null;
+    const assignment = user.assignedEntities?.find(ae => ae.entityId === selectedEntityId);
+    if (!assignment?.approverId) return null;
+    const approver = users?.find(u => u.id === assignment.approverId);
+    return approver ? approver.name : assignment.approverId;
+  }, [user, users, selectedEntityId]);
+
   const updateExpense = (id, field, value) => {
     const updated = formData.expenses.map(e => e.id === id ? { ...e, [field]: value } : e);
     setFormData({ ...formData, expenses: updated });
@@ -473,10 +481,14 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
       <div className="frozen-header">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h2 style={{ color: 'var(--primary)' }}>{formData.title || 'New Expense Claim'}</h2>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            <h2 style={{ color: 'var(--primary)', marginBottom: '0.2rem' }}>{formData.title || 'New Expense Claim'}</h2>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0 0 0.5rem 0' }}>
               Positions: <strong>{formData.expenses.length}</strong> | Total: <strong>€{formData.expenses.reduce((acc, e) => acc + Number(e.amount), 0)}</strong>
             </p>
+            <div style={{ fontSize: '0.75rem', display: 'flex', gap: '1rem', color: '#666', background: '#f5f5f5', padding: '0.3rem 0.6rem', borderRadius: '4px', display: 'inline-flex' }}>
+              <span>Role: <strong>{user.roles?.join(', ') || 'N/A'}</strong></span>
+              {resolvedApprover && <span>Approver: <strong>{resolvedApprover}</strong></span>}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
@@ -1264,8 +1276,8 @@ function App() {
 
   const isManagerApprover = useMemo(() => {
     if (!user) return false;
-    if (user.roles.includes('MANAGER')) return true;
-    if (userEntityApprovers && userEntityApprovers.some(ua => ua.approver_id === user.id)) return true;
+    if (user.roles?.includes('MANAGER')) return true;
+    if (userEntityApprovers && userEntityApprovers.some(ua => ua.approver_id == user.id)) return true;
     return false;
   }, [user, userEntityApprovers]);
 
@@ -1296,7 +1308,7 @@ function App() {
     if (user) {
       fetchUserData();
     }
-  }, [user]);
+  }, [user, userEntityApprovers]);
 
   const fetchGlobalData = async () => {
     try {
@@ -1351,7 +1363,7 @@ function App() {
     setLoading(true);
     try {
       const isFin = user.roles.includes('ACCOUNTANT') || user.roles.includes('ADMIN');
-      const isMgr = user.roles.includes('MANAGER');
+      const isMgr = isManagerApprover;
 
       // Fetch claims: staff only see their own, managers/finance fetch all here but filtered later
       let claimsQuery = supabase.from('claims').select('*, expense_items(*)');
@@ -1377,7 +1389,7 @@ function App() {
             if (isFin && isAccForEntity && c.claim_status !== 'NEW') return true;
 
             // Check if user is explicit approver for this staff member in this entity
-            const isApprForUser = userEntityApprovers.some(ua => ua.approver_id === user.id && ua.user_id === c.user_id && ua.entity_id === c.entity_id);
+            const isApprForUser = userEntityApprovers.some(ua => ua.approver_id == user.id && ua.user_id == c.user_id && ua.entity_id == c.entity_id);
             if (isManagerApprover && isApprForUser && c.claim_status !== 'NEW') return true;
 
             // Finance/Admin fallback to see all submitted claims in the Compliance Hub
@@ -1558,25 +1570,31 @@ function App() {
         .select()
         .single();
 
-      if (cErr) throw cErr;
+      if (cErr) {
+        console.error("Supabase Save Error for Claims:", cErr, "Payload:", safeClaim);
+        throw cErr;
+      }
 
       // 2. Save Normalized Expenses
       let oldBacklogIds = [];
       if (expenses && expenses.length > 0) {
         // Find previously allocated receipts so we can release them if removed
-        const { data: oldExpenses } = await supabase.from('expense_items').select('backlog_id').eq('claim_id', claim.id);
-        oldBacklogIds = (oldExpenses || []).map(e => e.backlog_id).filter(Boolean);
+        const { data: dbExpenses } = await supabase.from('expense_items').select('id, backlog_id').eq('claim_id', claim.id);
+        const oldExpenses = dbExpenses || [];
+        oldBacklogIds = oldExpenses.map(e => e.backlog_id).filter(Boolean);
 
-        // Delete old expenses if updating
-        await supabase.from('expense_items').delete().eq('claim_id', claim.id);
-
+        const payloadIds = [];
         const expensePayload = expenses.map(e => {
+          const isTempId = !e.id || typeof e.id === 'number' || (typeof e.id === 'string' && !e.id.includes('-') && !e.id.includes('.'));
+          const finalId = isTempId ? (crypto.randomUUID ? crypto.randomUUID() : `EXP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`) : e.id;
+          payloadIds.push(finalId);
+
           return {
-            id: e.id && String(e.id).includes('.') ? e.id : String(Date.now() + Math.random()),
+            id: finalId,
             claim_id: claim.id,
             type: e.type,
             amount: Number(e.amount) || 0,
-            currency: e.currency, // From the specific expense position
+            currency: e.currency,
             payment: e.payment,
             receipt: e.receipt,
             project: e.project,
@@ -1588,8 +1606,19 @@ function App() {
             purpose: e.purpose
           };
         });
-        const { error: eErr } = await supabase.from('expense_items').insert(expensePayload);
+
+        // UPSERT the current expenses array to avoid 409 conflict
+        const { error: eErr } = await supabase.from('expense_items').upsert(expensePayload);
         if (eErr) throw eErr;
+
+        // Cleanup: remove expenses that were deleted from the UI form by finding what was in the DB that isn't in payloadIds
+        const toDeleteIds = oldExpenses.map(o => o.id).filter(id => !payloadIds.includes(id));
+        if (toDeleteIds.length > 0) {
+          await supabase.from('expense_items').delete().in('id', toDeleteIds);
+        }
+      } else {
+        // Form was cleared entirely, delete all positions associated with it
+        await supabase.from('expense_items').delete().eq('claim_id', claim.id);
       }
 
       // 3. Clean up allocated receipts vs released receipts
@@ -1678,6 +1707,15 @@ function App() {
     }
   };
 
+  const handleLogout = () => {
+    setUser(null);
+    setClaims([]);
+    setReceipts([]);
+    setSelectedClaim(null);
+    setImportedClaim(null);
+    setPreviewReceipt(null);
+  };
+
   if (!user) return <LoginPage users={users.length > 0 ? users : INITIAL_USERS} onLogin={setUser} />;
 
   const userEntity = entities.find(e => e.id == user.entityId);
@@ -1688,7 +1726,7 @@ function App() {
         setView(v);
         setSelectedClaim(null);
         if (v === 'new-claim' || v === 'receipts-backlog') fetchData();
-      }} onLogout={() => setUser(null)} />
+      }} onLogout={handleLogout} />
       <main className="main-content">
         {view === 'dashboard' && (
           <div className="view">
@@ -1751,6 +1789,7 @@ function App() {
         {view === 'new-claim' && user && (
           <ClaimForm
             user={user}
+            users={users}
             claim={importedClaim}
             entities={entities}
             expenseTypes={expenseTypes}
