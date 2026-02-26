@@ -565,7 +565,7 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
                       </div>
                       <div className="form-group">
                         <label>Description</label>
-                        <input type="text" value={exp.description} onChange={e => updateExpense(exp.id, 'description', e.target.value)} />
+                        <input type="text" value={exp.description || ''} onChange={e => updateExpense(exp.id, 'description', e.target.value)} />
                       </div>
                     </div>
 
@@ -1427,13 +1427,31 @@ function App() {
     try {
       const { expenses, ...claimBase } = claimData;
 
+      const dbBase = { ...claimBase };
+      if (dbBase.advanceAmount !== undefined) {
+        dbBase.advance_amount = dbBase.advanceAmount;
+        delete dbBase.advanceAmount;
+      }
+      if (dbBase.claimStatus !== undefined) {
+        dbBase.claim_status = dbBase.claimStatus;
+        delete dbBase.claimStatus;
+      }
+      if (dbBase.approvalStatus !== undefined) {
+        dbBase.approval_status = dbBase.approvalStatus;
+        delete dbBase.approvalStatus;
+      }
+      if (dbBase.entityId !== undefined) {
+        dbBase.entity_id = dbBase.entityId;
+        delete dbBase.entityId;
+      }
+
       // 1. Save Claim Base
       const { data: claim, error: cErr } = await supabase
         .from('claims')
         .upsert({
-          ...claimBase,
+          ...dbBase,
           user_id: user.id,
-          submission_date: claimBase.claimStatus === CLAIM_STATUS.SUBMITTED ? new Date() : claimBase.submission_date
+          submission_date: dbBase.claim_status === CLAIM_STATUS.SUBMITTED ? new Date() : (dbBase.submission_date || new Date())
         })
         .select()
         .single();
