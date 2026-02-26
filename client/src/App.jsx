@@ -369,29 +369,48 @@ const DetailView = ({ claim, owner, currentUser, entity, onBack, onStatusUpdate,
   );
 };
 
-const ClaimForm = ({ user, claim, entity, projects, departments, expenseTypes, receipts, onCancel, onSave, onDraft }) => {
+const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes, receipts, onCancel, onSave, onDraft }) => {
+  const availableEntities = entities || [];
+  const [selectedEntityId, setSelectedEntityId] = useState(claim?.entityId || (availableEntities.length === 1 ? availableEntities[0].id : ''));
+  const activeEntity = availableEntities.find(e => e.id === selectedEntityId) || {};
+
+  const availableCurrencies = useMemo(() => {
+    if (!activeEntity.id) return [];
+    const curs = [];
+    if (activeEntity.primary_currency) curs.push(activeEntity.primary_currency);
+    if (activeEntity.secondary_currency) curs.push(activeEntity.secondary_currency);
+    return [...new Set(curs)];
+  }, [activeEntity]);
+
+  const [selectedCurrency, setSelectedCurrency] = useState(claim?.currency || (availableCurrencies.length === 1 ? availableCurrencies[0] : ''));
+
   const [formData, setFormData] = useState(claim || {
     id: 'DRAFT-' + Date.now(),
     title: '',
     userId: user.id,
-    entityId: user.entityId,
+    entityId: selectedEntityId,
+    currency: selectedCurrency,
     advanceAmount: 0,
     claimStatus: CLAIM_STATUS.NEW,
     approvalStatus: APPROVAL_STATUS.NA,
     expenses: []
   });
 
+  useEffect(() => {
+    setFormData(prev => ({ ...prev, entityId: selectedEntityId, currency: selectedCurrency }));
+  }, [selectedEntityId, selectedCurrency]);
+
   const [showLibrary, setShowLibrary] = useState(true);
   const fileInputRef = React.useRef(null);
   const claimFileInputRef = React.useRef(null);
 
-  const mandatory = entity.mandatoryFields;
+  const mandatory = activeEntity.mandatoryFields || {};
 
   const isFormValid = useMemo(() => {
-    if (!formData.title) return false;
+    if (!formData.title || !formData.entityId || (availableCurrencies.length > 0 && !formData.currency)) return false;
     return formData.expenses.every(e => {
       const typeCfg = expenseTypes.find(t => t.label === e.type);
-      const mapping = entity.expenseMappings?.[typeCfg?.id];
+      const mapping = activeEntity.expenseMappings?.[typeCfg?.id];
       const glAccount = mapping?.glAccount || typeCfg?.defaultAccount;
       const basicValid = e.type && e.amount > 0 && e.receipt &&
         (!mandatory.project || e.project) &&
@@ -401,7 +420,7 @@ const ClaimForm = ({ user, claim, entity, projects, departments, expenseTypes, r
       }
       return basicValid;
     });
-  }, [formData, mandatory, expenseTypes]);
+  }, [formData, mandatory, expenseTypes, activeEntity, availableCurrencies]);
 
   const updateExpense = (id, field, value) => {
     const updated = formData.expenses.map(e => e.id === id ? { ...e, [field]: value } : e);
@@ -457,101 +476,122 @@ const ClaimForm = ({ user, claim, entity, projects, departments, expenseTypes, r
             </div>
           </div>
 
-          {formData.expenses.map((exp, idx) => {
-            const typeCfg = expenseTypes.find(t => t.label === exp.type);
-            const mapping = entity.expenseMappings?.[typeCfg?.id];
-            const localGL = mapping?.glAccount || typeCfg?.defaultAccount || 'N/A';
-            const localVAT = mapping?.vatRate ?? typeCfg?.defaultVat ?? 0;
-            return (
-              <div
-                key={exp.id}
-                className="card"
-                style={{ marginBottom: '1rem', borderLeft: '4px solid var(--primary)', transition: 'transform 0.2s', position: 'relative' }}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  try {
-                    const receiptData = JSON.parse(e.dataTransfer.getData('receipt'));
-                    const newExpenses = [...formData.expenses];
-                    newExpenses[idx] = {
-                      ...newExpenses[idx],
-                      receipt: receiptData.fileName,
-                      amount: receiptData.amountSuggestion,
-                      backlogId: receiptData.id,
-                      description: `Allocated from ${receiptData.fileName}`
-                    };
-                    setFormData({ ...formData, expenses: newExpenses });
-                  } catch (err) { console.error('Drop error:', err); }
-                }}
-              >
-                <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label>Type *</label>
-                    <select value={exp.type} onChange={e => updateExpense(exp.id, 'type', e.target.value)}>
-                      <option value="">Choose Type</option>
-                      {expenseTypes.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Amount *</label>
-                    <input type="number" value={exp.amount} onChange={e => updateExpense(exp.id, 'amount', e.target.value)} />
-                  </div>
-                  <div className="form-group">
-                    <label>Payment</label>
-                    <select value={exp.payment} onChange={e => updateExpense(exp.id, 'payment', e.target.value)}>
-                      <option value="REIMBURSABLE">Reimbursable</option>
-                      <option value="COMPANY_CARD">Company Card</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Receipt Attachment</label>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input value={exp.receipt || ''} readOnly placeholder="Drag here or click →" />
-                      <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={(e) => {
-                        if (e.target.files[0]) {
-                          const newExpenses = [...formData.expenses];
-                          newExpenses[idx].receipt = e.target.files[0].name;
-                          setFormData({ ...formData, expenses: newExpenses });
-                        }
-                      }} />
-                      <button className="btn btn-primary" style={{ fontSize: '0.75rem' }} onClick={() => setShowLibrary(true)}>Library</button>
+          <div className="card" style={{ marginBottom: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            <div className="form-group">
+              <label>Legal Entity *</label>
+              <select value={selectedEntityId} onChange={e => { setSelectedEntityId(e.target.value); setSelectedCurrency(''); }} disabled={!!claim}>
+                <option value="">Select Entity</option>
+                {availableEntities.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Claim Currency *</label>
+              <select value={selectedCurrency} onChange={e => setSelectedCurrency(e.target.value)} disabled={availableCurrencies.length === 0 || !!claim}>
+                <option value="">{availableCurrencies.length > 0 ? 'Select Currency' : 'N/A'}</option>
+                {availableCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {selectedEntityId && (availableCurrencies.length === 0 || selectedCurrency) && (
+            <>
+              {formData.expenses.map((exp, idx) => {
+                const typeCfg = expenseTypes.find(t => t.label === exp.type);
+                const mapping = activeEntity.expenseMappings?.[typeCfg?.id];
+                const localGL = mapping?.glAccount || typeCfg?.defaultAccount || 'N/A';
+                const localVAT = mapping?.vatRate ?? typeCfg?.defaultVat ?? 0;
+                return (
+                  <div
+                    key={exp.id}
+                    className="card"
+                    style={{ marginBottom: '1rem', borderLeft: '4px solid var(--primary)', transition: 'transform 0.2s', position: 'relative' }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      try {
+                        const receiptData = JSON.parse(e.dataTransfer.getData('receipt'));
+                        const newExpenses = [...formData.expenses];
+                        newExpenses[idx] = {
+                          ...newExpenses[idx],
+                          receipt: receiptData.file_name,
+                          amount: receiptData.amount_suggestion,
+                          backlogId: receiptData.id,
+                          description: `Allocated from ${receiptData.file_name}`
+                        };
+                        setFormData({ ...formData, expenses: newExpenses });
+                      } catch (err) { console.error('Drop error:', err); }
+                    }}
+                  >
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: '1rem' }}>
+                      <div className="form-group">
+                        <label>Type *</label>
+                        <select value={exp.type} onChange={e => updateExpense(exp.id, 'type', e.target.value)}>
+                          <option value="">Choose Type</option>
+                          {expenseTypes.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Amount *</label>
+                        <input type="number" value={exp.amount} onChange={e => updateExpense(exp.id, 'amount', e.target.value)} />
+                      </div>
+                      <div className="form-group">
+                        <label>Payment</label>
+                        <select value={exp.payment} onChange={e => updateExpense(exp.id, 'payment', e.target.value)}>
+                          <option value="REIMBURSABLE">Reimbursable</option>
+                          <option value="COMPANY_CARD">Company Card</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Receipt Attachment</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input value={exp.receipt || ''} readOnly placeholder="Drag here or click →" onClick={() => document.getElementById(`file-upload-${exp.id}`).click()} style={{ cursor: 'pointer' }} />
+                          <input id={`file-upload-${exp.id}`} type="file" style={{ display: 'none' }} onChange={(e) => {
+                            if (e.target.files[0]) {
+                              const newExpenses = [...formData.expenses];
+                              newExpenses[idx].receipt = e.target.files[0].name;
+                              setFormData({ ...formData, expenses: newExpenses });
+                            }
+                          }} />
+                          <button className="btn btn-primary" style={{ fontSize: '0.75rem' }} onClick={() => setShowLibrary(true)}>Library</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Entity-Specific Dimensions */}
+                    <div style={{ padding: '0.5rem 1rem', background: '#f8f8f8', borderTop: '1px solid #eee', fontSize: '0.75rem', color: '#666', borderBottomLeftRadius: '4px', borderBottomRightRadius: '4px' }}>
+                      Financial Dimensions for {activeEntity.name}: <strong>GL {localGL}</strong> | <strong>VAT {localVAT}%</strong>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
+                      <div className="form-group">
+                        <label>Project {mandatory.project && '*'}</label>
+                        <select value={exp.project} onChange={e => updateExpense(exp.id, 'project', e.target.value)}>
+                          <option value="">Select Project</option>
+                          {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Department {mandatory.department && '*'}</label>
+                        <select value={exp.department} onChange={e => updateExpense(exp.id, 'department', e.target.value)}>
+                          <option value="">Select Dept</option>
+                          {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Description</label>
+                        <input type="text" value={exp.description} onChange={e => updateExpense(exp.id, 'description', e.target.value)} />
+                      </div>
+                    </div>
+
+                    <div style={{ textAlign: 'right', marginTop: '0.5rem' }}>
+                      <button className="btn" style={{ color: 'var(--error)', padding: '0.2rem' }} onClick={() => setFormData({ ...formData, expenses: formData.expenses.filter(i => i.id !== exp.id) })}>Remove Position</button>
                     </div>
                   </div>
-                </div>
-
-                {/* Entity-Specific Dimensions */}
-                <div style={{ padding: '0.5rem 1rem', background: '#f8f8f8', borderTop: '1px solid #eee', fontSize: '0.75rem', color: '#666', borderBottomLeftRadius: '4px', borderBottomRightRadius: '4px' }}>
-                  Financial Dimensions for {entity.name}: <strong>GL {localGL}</strong> | <strong>VAT {localVAT}%</strong>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginTop: '0.5rem' }}>
-                  <div className="form-group">
-                    <label>Project {mandatory.project && '*'}</label>
-                    <select value={exp.project} onChange={e => updateExpense(exp.id, 'project', e.target.value)}>
-                      <option value="">Select Project</option>
-                      {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Department {mandatory.department && '*'}</label>
-                    <select value={exp.department} onChange={e => updateExpense(exp.id, 'department', e.target.value)}>
-                      <option value="">Select Dept</option>
-                      {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Description</label>
-                    <input type="text" value={exp.description} onChange={e => updateExpense(exp.id, 'description', e.target.value)} />
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'right', marginTop: '0.5rem' }}>
-                  <button className="btn" style={{ color: 'var(--error)', padding: '0.2rem' }} onClick={() => setFormData({ ...formData, expenses: formData.expenses.filter(i => i.id !== exp.id) })}>Remove Position</button>
-                </div>
-              </div>
-            );
-          })}
-          <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => setFormData({ ...formData, expenses: [...formData.expenses, { id: Date.now(), type: '', amount: 0, currency: 'EUR', payment: 'REIMBURSABLE', receipt: null, project: '', department: '' }] })}>+ Add New Position</button>
+                );
+              })}
+              <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => setFormData({ ...formData, expenses: [...formData.expenses, { id: Date.now(), type: '', amount: 0, currency: selectedCurrency, payment: 'REIMBURSABLE', receipt: null, project: '', department: '' }] })}>+ Add New Position</button>
+            </>
+          )}
         </div>
 
         {showLibrary && (
@@ -573,9 +613,9 @@ const ClaimForm = ({ user, claim, entity, projects, departments, expenseTypes, r
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <span style={{ fontSize: '1.5rem' }}>📄</span>
                     <div style={{ overflow: 'hidden' }}>
-                      <strong style={{ display: 'block', fontSize: '0.85rem' }}>{r.fileName}</strong>
+                      <strong style={{ display: 'block', fontSize: '0.85rem' }}>{r.file_name}</strong>
                       <small style={{ color: 'var(--primary)', fontWeight: 'bold' }}>€{r.amount_suggestion}</small>
-                      <div style={{ fontSize: '0.7rem', color: '#888' }}>{r.vendorSuggestion}</div>
+                      <div style={{ fontSize: '0.7rem', color: '#888' }}>{r.vendor_suggestion}</div>
                     </div>
                   </div>
                 </div>
@@ -778,7 +818,7 @@ const ReceiptBacklog = ({ user, onAllocate, onBack }) => {
                 <strong>{r.file_name}</strong>
                 <p style={{ fontSize: '0.75rem', color: '#666', margin: '0.4rem 0' }}>Uploaded: {new Date(r.created_at).toLocaleDateString()}</p>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.8rem' }}>
-                  <small style={{ color: 'var(--primary)', fontWeight: 'bold' }}>€{r.amountSuggestion}</small>
+                  <small style={{ color: 'var(--primary)', fontWeight: 'bold' }}>€{r.amount_suggestion}</small>
                   <button className="btn btn-outline" style={{ padding: '0.2rem 0.4rem', fontSize: '0.7rem', color: 'var(--error)' }} onClick={() => handleDelete(r.id)}>Delete</button>
                 </div>
                 <div style={{ marginTop: '0.8rem' }}>
@@ -794,7 +834,7 @@ const ReceiptBacklog = ({ user, onAllocate, onBack }) => {
   );
 };
 
-const AdminCenter = ({ entities, users, projects, departments, expenseTypes, onSaveItem, onDeleteItem }) => {
+const AdminCenter = ({ entities, users, projects, departments, expenseTypes, userEntityApprovers, onSaveItem, onDeleteItem }) => {
   const [activeTab, setActiveTab] = useState('entities');
   const [editingItem, setEditingItem] = useState(null);
   const [search, setSearch] = useState('');
@@ -1064,6 +1104,52 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, onS
                 </>
               )}
 
+              {/* Per-Entity Configuration Panel */}
+              {editingItem.type === 'user' && (
+                <div className="form-group" style={{ marginTop: '1rem', borderTop: '2px solid #eee', paddingTop: '1rem' }}>
+                  <label style={{ fontWeight: 'bold' }}>Per-Entity Configuration (Approvers & Accountants)</label>
+                  <p style={{ fontSize: '0.75rem', color: '#666' }}>Configure approvers or set user as accountant for each assigned entity.</p>
+                  <div style={{ display: 'grid', gap: '0.8rem', marginTop: '0.5rem' }}>
+                    {(editingItem.assignedEntities || []).map(entId => {
+                      const ent = entities.find(e => e.id === entId);
+                      const multiCfg = editingItem.multiEntityConfig?.[entId] ||
+                        userEntityApprovers?.find(ua => ua.user_id === editingItem.id && ua.entity_id === entId) || {};
+                      return (
+                        <div key={entId} style={{ background: '#fcfcfc', border: '1px solid #ddd', padding: '0.8rem', borderRadius: '4px', display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) 2fr auto', gap: '1rem', alignItems: 'center' }}>
+                          <strong style={{ fontSize: '0.85rem' }}>{ent?.name || entId}</strong>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <label style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>Approver:</label>
+                            <select
+                              style={{ padding: '0.2rem', fontSize: '0.8rem', width: '100%' }}
+                              value={multiCfg.approver_id || ''}
+                              onChange={e => {
+                                const config = { ...(editingItem.multiEntityConfig || {}) };
+                                config[entId] = { ...multiCfg, approver_id: e.target.value };
+                                setEditingItem({ ...editingItem, multiEntityConfig: config });
+                              }}>
+                              <option value="">None</option>
+                              {users.filter(u => u.id !== editingItem.id).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                            </select>
+                          </div>
+                          <label style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={multiCfg.is_accountant || false}
+                              onChange={e => {
+                                const config = { ...(editingItem.multiEntityConfig || {}) };
+                                config[entId] = { ...multiCfg, is_accountant: e.target.checked };
+                                setEditingItem({ ...editingItem, multiEntityConfig: config });
+                              }}
+                            /> Is Accountant
+                          </label>
+                        </div>
+                      );
+                    })}
+                    {!(editingItem.assignedEntities?.length > 0) && <p style={{ fontSize: '0.8rem', fontStyle: 'italic', color: '#999' }}>Assign entities to configure approvers.</p>}
+                  </div>
+                </div>
+              )}
+
               {(editingItem.type === 'project' || editingItem.type === 'department') && (
                 <div className="form-group"><label>Reference Code</label><input value={editingItem.code || ''} onChange={e => setEditingItem({ ...editingItem, code: e.target.value })} /></div>
               )}
@@ -1105,6 +1191,7 @@ function App() {
   const [departments, setDepartments] = useState([]);
   const [users, setUsers] = useState([]);
   const [receipts, setReceipts] = useState([]);
+  const [userEntityApprovers, setUserEntityApprovers] = useState([]);
   const [selectedClaim, setSelectedClaim] = useState(null);
   const [importedClaim, setImportedClaim] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1125,15 +1212,16 @@ function App() {
 
   const fetchGlobalData = async () => {
     try {
-      const [eRes, uRes, pRes, dRes, tRes] = await Promise.all([
+      const [eRes, uRes, pRes, dRes, tRes, ueaRes] = await Promise.all([
         supabase.from('entities').select('*'),
         supabase.from('users').select('*'),
         supabase.from('projects').select('*'),
         supabase.from('departments').select('*'),
-        supabase.from('expense_types').select('*')
+        supabase.from('expense_types').select('*'),
+        supabase.from('user_entity_approvers').select('*')
       ]);
 
-      const errors = [eRes.error, uRes.error, pRes.error, dRes.error, tRes.error].filter(Boolean);
+      const errors = [eRes.error, uRes.error, pRes.error, dRes.error, tRes.error, ueaRes.error].filter(Boolean);
       if (errors.length > 0) {
         console.error('Supabase Global Fetch Errors:', errors);
         const tableMissing = errors.some(e => e.code === '42P01');
@@ -1164,6 +1252,7 @@ function App() {
         defaultVat: t.default_vat,
         requiresEntertainment: t.requires_entertainment
       })));
+      if (ueaRes.data) setUserEntityApprovers(ueaRes.data);
     } catch (err) {
       console.warn('Supabase fetch failed, falling back to local mocks', err);
     }
@@ -1176,6 +1265,7 @@ function App() {
       const isFin = user.roles.includes('ACCOUNTANT') || user.roles.includes('ADMIN');
       const isMgr = user.roles.includes('MANAGER');
 
+      // Fetch claims: staff only see their own, managers/finance fetch all here but filtered later
       let claimsQuery = supabase.from('claims').select('*, expense_items(*)');
       if (!isFin && !isMgr) {
         claimsQuery = claimsQuery.eq('user_id', user.id);
@@ -1187,10 +1277,31 @@ function App() {
       ]);
 
       if (cRes.data) {
-        setClaims(cRes.data.map(c => ({
+        let visibleClaims = cRes.data;
+        if (isFin || isMgr) {
+          visibleClaims = cRes.data.filter(c => {
+            if (c.user_id === user.id) return true; // Own claims
+
+            // Check if user is accountant for this entity
+            const isAccForEntity = userEntityApprovers.some(ua => ua.user_id === user.id && ua.entity_id === c.entity_id && ua.is_accountant);
+            if (isFin && isAccForEntity && c.claim_status !== 'NEW') return true;
+
+            // Check if user is approver for this staff member in this entity
+            const isApprForUser = userEntityApprovers.some(ua => ua.approver_id === user.id && ua.user_id === c.user_id && ua.entity_id === c.entity_id);
+            if (isMgr && isApprForUser && c.claim_status !== 'NEW') return true;
+
+            // Optional fallback for legacy direct relationships
+            if (isFin && user.roles.includes('ADMIN')) return true;
+
+            return false;
+          });
+        }
+
+        setClaims(visibleClaims.map(c => ({
           ...c,
           userId: c.user_id,
           entityId: c.entity_id,
+          currency: c.currency,
           expenses: (c.expense_items || []).map(e => ({
             ...e,
             backlogId: e.backlog_id
@@ -1238,6 +1349,9 @@ function App() {
           dbPayload.assigned_entities = payload.assignedEntities;
           delete dbPayload.assignedEntities;
         }
+        if (payload.multiEntityConfig) {
+          delete dbPayload.multiEntityConfig;
+        }
       } else if (collection === 'expense_types') {
         if (payload.defaultAccount) {
           dbPayload.default_account = payload.defaultAccount;
@@ -1260,6 +1374,21 @@ function App() {
       if (error) {
         alert('Save failed: ' + error.message);
       } else {
+        // Handle User Entity Approvers Multi-saving
+        if (collection === 'users' && payload.multiEntityConfig) {
+          const ueaPayloads = Object.entries(payload.multiEntityConfig).map(([entId, cfg]) => ({
+            id: cfg.id || undefined, // undefined will trigger uuid generation
+            user_id: dbPayload.id || item.id, // For new users, relies on upsert return, but simple client uses item logic
+            entity_id: entId,
+            approver_id: cfg.approver_id || null,
+            is_accountant: cfg.is_accountant || false,
+            is_active: true
+          }));
+
+          for (const uea of ueaPayloads) {
+            await supabase.from('user_entity_approvers').upsert(uea);
+          }
+        }
         await fetchData();
       }
     } catch (err) {
@@ -1426,7 +1555,7 @@ function App() {
           <ClaimForm
             user={user}
             claim={importedClaim}
-            entity={entities.find(e => e.id == user.entityId)}
+            entities={entities.filter(e => e.id === user.entityId || userEntityApprovers.some(ua => ua.user_id === user.id && ua.entity_id === e.id))}
             expenseTypes={expenseTypes}
             projects={projects}
             departments={departments}
@@ -1566,6 +1695,7 @@ function App() {
             projects={projects}
             departments={departments}
             expenseTypes={expenseTypes}
+            userEntityApprovers={userEntityApprovers}
             onSaveItem={handleSaveAdminItem}
             onDeleteItem={handleDeleteAdminItem}
           />
