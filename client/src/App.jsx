@@ -76,13 +76,20 @@ const LoginPage = ({ users, onLogin }) => {
   );
 };
 
-const Sidebar = ({ user, currentView, onViewChange, onLogout, isManagerApprover }) => {
+const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerApprover }) => {
   const hasRole = (role) => user.roles.includes(role);
+
+  const primaryApproverId = user.approverId || user.assignedEntities?.[0]?.approverId;
+  const primaryApprover = users?.find(u => u.id === primaryApproverId);
+  const approverName = primaryApprover ? primaryApprover.name : (primaryApproverId || 'N/A');
+
   return (
     <aside className="sidebar">
       <div>
         <h1 style={{ fontSize: '1.2rem', color: 'var(--primary)', marginBottom: '0.5rem' }}>DCBI Tool</h1>
-        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Operator: <strong>{user.name}</strong></p>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0 0 0.2rem 0' }}>Operator: <strong>{user.name}</strong></p>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0 0 0.2rem 0' }}>Role: <strong>{user.roles?.join(', ')}</strong></p>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0' }}>Approver: <strong>{approverName}</strong></p>
       </div>
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         <div className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => onViewChange('dashboard')}>🏠 Dashboard</div>
@@ -1722,7 +1729,7 @@ function App() {
 
   return (
     <div className="layout">
-      <Sidebar user={user} currentView={view} onViewChange={(v) => {
+      <Sidebar user={user} users={users} currentView={view} isManagerApprover={isManagerApprover} onViewChange={(v) => {
         setView(v);
         setSelectedClaim(null);
         if (v === 'new-claim' || v === 'receipts-backlog') fetchData();
@@ -1791,7 +1798,7 @@ function App() {
             user={user}
             users={users}
             claim={importedClaim}
-            entities={entities}
+            entities={user.roles?.includes('ADMIN') ? entities : entities.filter(e => e.id === user.entityId || user.assignedEntities?.some(ae => ae.entityId === e.id))}
             expenseTypes={expenseTypes}
             projects={projects}
             departments={departments}
