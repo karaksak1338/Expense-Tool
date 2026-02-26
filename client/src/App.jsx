@@ -1507,11 +1507,18 @@ function App() {
         // Delete old expenses if updating
         await supabase.from('expense_items').delete().eq('claim_id', claim.id);
 
-        const expensePayload = expenses.map(e => ({
-          ...e,
-          claim_id: claim.id,
-          id: e.id && String(e.id).includes('.') ? e.id : String(Date.now() + Math.random()) // Ensure unique IDs
-        }));
+        const expensePayload = expenses.map(e => {
+          const ep = {
+            ...e,
+            claim_id: claim.id,
+            id: e.id && String(e.id).includes('.') ? e.id : String(Date.now() + Math.random())
+          };
+          if (ep.backlogId !== undefined) {
+            ep.backlog_id = ep.backlogId;
+            delete ep.backlogId;
+          }
+          return ep;
+        });
         const { error: eErr } = await supabase.from('expense_items').insert(expensePayload);
         if (eErr) throw eErr;
       }
