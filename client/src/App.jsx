@@ -1463,6 +1463,9 @@ function App() {
       const { expenses, ...claimBase } = claimData;
 
       const dbBase = { ...claimBase };
+      if (dbBase.currency !== undefined) {
+        delete dbBase.currency; // Currency is stored on expense_items, not claims table
+      }
       if (dbBase.advanceAmount !== undefined) {
         dbBase.advance_amount = dbBase.advanceAmount;
         delete dbBase.advanceAmount;
