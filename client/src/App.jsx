@@ -1651,9 +1651,9 @@ function App() {
                     <td><span className={`badge badge-${c.approvalStatus.replace(' ', '-').toLowerCase()}`}>{c.approvalStatus}</span></td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button className="btn btn-outline" onClick={() => setSelectedClaim(c)}>View History</button>
+                        <button className="btn btn-outline" onClick={(e) => { e.stopPropagation(); setSelectedClaim(c) }}>View History</button>
                         {c.claimStatus === CLAIM_STATUS.NEW && (
-                          <button className="btn btn-outline" style={{ color: 'var(--error)', borderColor: 'var(--error)' }} onClick={() => handleDeleteClaim(c.id)}>🗑️</button>
+                          <button className="btn btn-outline" style={{ color: 'var(--error)', borderColor: 'var(--error)' }} onClick={(e) => { e.stopPropagation(); handleDeleteClaim(c.id); }}>🗑️</button>
                         )}
                       </div>
                     </td>
@@ -1719,6 +1719,7 @@ function App() {
               setImportedClaim(draft);
               setView('new-claim');
             }}
+            onPreview={setPreviewReceipt}
             onBack={() => setView('dashboard')}
           />
         )}
@@ -1848,9 +1849,6 @@ function App() {
                   <div className="preview-loader-container">
                     <div className="preview-loader" />
                     <p>Fetching secure preview...</p>
-                    <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>
-                      (Files uploaded to Supabase Storage would render directly here.)
-                    </p>
                   </div>
                 )}
               </div>
