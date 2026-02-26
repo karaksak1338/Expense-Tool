@@ -1804,25 +1804,25 @@ function App() {
 
         {/* Global Receipt Preview Modal */}
         {previewReceipt && (
-          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setPreviewReceipt(null)}>
-            <div style={{ background: 'white', padding: '1rem', borderRadius: '8px', minWidth: '300px', maxWidth: '80vw', maxHeight: '80vh', overflow: 'auto', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>
-                <h3 style={{ margin: 0, color: 'var(--primary)' }}>Receipt Preview</h3>
-                <button className="btn btn-outline" style={{ padding: '0.2rem 0.5rem' }} onClick={() => setPreviewReceipt(null)}>Close</button>
-              </div>
-              <div style={{ padding: '1rem', background: '#fcfcfc', borderRadius: '4px', border: '1px dashed #ccc' }}>
+          <div className="preview-modal-overlay" onClick={() => setPreviewReceipt(null)}>
+            <div className="preview-modal-content" onClick={e => e.stopPropagation()}>
+              <button className="preview-close-btn" onClick={() => setPreviewReceipt(null)}>✕</button>
+              <h2 className="preview-header">Receipt Details</h2>
+              <div className="preview-image-container">
                 {localStorage.getItem(`receipt_blob_${previewReceipt}`) ? (
                   localStorage.getItem(`receipt_blob_${previewReceipt}`).startsWith('data:application/pdf') ? (
-                    <embed src={localStorage.getItem(`receipt_blob_${previewReceipt}`)} type="application/pdf" width="100%" height="400px" />
+                    <iframe src={localStorage.getItem(`receipt_blob_${previewReceipt}`)} className="preview-iframe" title="PDF Preview" />
                   ) : (
-                    <img src={localStorage.getItem(`receipt_blob_${previewReceipt}`)} alt="Receipt" style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }} />
+                    <img src={localStorage.getItem(`receipt_blob_${previewReceipt}`)} alt="Receipt" />
                   )
                 ) : (
-                  <>
-                    <span style={{ fontSize: '4rem' }}>📄</span>
-                    <h4 style={{ marginTop: '1rem', color: '#444' }}>{previewReceipt}</h4>
-                    <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>Local preview simulation. (Files uploaded to Supabase Storage would render directly here.)</p>
-                  </>
+                  <div className="preview-loader-container">
+                    <div className="preview-loader" />
+                    <p>Fetching secure preview...</p>
+                    <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>
+                      (Files uploaded to Supabase Storage would render directly here.)
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
