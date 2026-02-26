@@ -1331,7 +1331,7 @@ function App() {
 
   const handleSaveAdminItem = async (collection, item) => {
     try {
-      const { isNew, ...payload } = item;
+      const { isNew, type, ...payload } = item;
 
       // Reverse Map for Supabase
       const dbPayload = { ...payload };
