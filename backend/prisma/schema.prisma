@@ -1,0 +1,145 @@
+// Comprehensive schema for DCBI Expense Tool
+// Refined for SQLite/Prisma 5 Compatibility (Enums to Strings)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Roles: STAFF, MANAGER, ACCOUNTANT, ADMIN
+// ClaimStatus: NEW, SUBMITTED, ACCRUED, CLOSED
+// ApprovalStatus: NA, PENDING, REJECTED, APPROVED
+// PaymentMethod: COMPANY_CARD, REIMBURSABLE
+
+model Entity {
+  id               String         @id @default(uuid())
+  name             String
+  companyCode      String         @unique
+  address          String?
+  country          String?
+  countryIso3      String?
+  logoUrl          String?
+  mandatoryFields  String?        // JSON string: { project: boolean, department: boolean, costCenter: boolean }
+  users            User[]         @relation("UserPrimaryEntity")
+  assignedAccountants User[]       @relation("AccountantEntities")
+  expenseTypes     ExpenseType[]
+  claims           ExpenseClaim[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model User {
+  id               String         @id @default(uuid())
+  email            String         @unique
+  name             String
+  roles            String         // Comma-separated: e.g., "STAFF,MANAGER"
+  
+  primaryEntity    Entity         @relation("UserPrimaryEntity", fields: [entityId], references: [id])
+  entityId         String
+  
+  assignedEntities Entity[]       @relation("AccountantEntities")
+  
+  approver         User?          @relation("UserApprover", fields: [approverId], references: [id])
+  approverId       String?
+  subordinates     User[]         @relation("UserApprover")
+  
+  claims           ExpenseClaim[] @relation("ClaimStaff")
+  auditActions     AuditLog[]
+  
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model ExpenseType {
+  id                  String   @id @default(uuid())
+  label               String
+  entityId            String
+  entity              Entity   @relation(fields: [entityId], references: [id])
+  defaultAccount      String?
+  defaultVatRate      Decimal? @default(0)
+  requiresEntertainment Boolean @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model ExpenseClaim {
+  id                 String         @id @default(uuid())
+  title              String
+  claimStatus        String         @default("NEW")
+  approvalStatus     String         @default("NA")
+  advanceAmount      Decimal        @default(0)
+  version            Int            @default(1)
+  
+  staff              User           @relation("ClaimStaff", fields: [userId], references: [id])
+  userId             String
+  
+  entity             Entity         @relation(fields: [entityId], references: [id])
+  entityId           String
+  
+  expenses           Expense[]
+  auditLogs          AuditLog[]
+  
+  submittedAt        DateTime?
+  managerApprovedAt  DateTime?
+  accountantApprovedAt DateTime?
+  
+  totalAmount        Decimal        @default(0)
+  currency           String         @default("EUR")
+  
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
+
+model Expense {
+  id              String        @id @default(uuid())
+  claimId         String
+  claim           ExpenseClaim  @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  date            DateTime
+  amount          Decimal
+  currency        String        @default("EUR")
+  paymentMethod   String        @default("REIMBURSABLE")
+  type            String
+  description     String?
+  project         String?
+  department      String?
+  costCenter      String?
+  
+  clients         String?
+  attendees       Int?
+  purpose         String?
+  
+  vatAmount       Decimal?      @default(0)
+  glAccount       String?
+  
+  attachments     Attachment[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Attachment {
+  id          String   @id @default(uuid())
+  expenseId   String
+  expense     Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  fileUrl     String
+  fileName    String
+  fileType    String?
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id              String       @id @default(uuid())
+  claimId         String
+  claim           ExpenseClaim @relation(fields: [claimId], references: [id])
+  action          String
+  actorId         String
+  actor           User         @relation(fields: [actorId], references: [id])
+  roleAtTime      String
+  previousStatus  String?
+  newStatus       String?
+  details         String?      // JSON string
+  timestamp       DateTime     @default(now())
+}

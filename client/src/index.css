@@ -1,0 +1,244 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --primary: #0078d4;
+  --primary-hover: #005a9e;
+  --bg-main: #f8f9fa;
+  --bg-card: #ffffff;
+  --text-main: #201f1e;
+  --text-secondary: #605e5c;
+  --border: #e1dfdd;
+  --success: #107c10;
+  --error: #a4262c;
+  --warning: #ffb900;
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --header-height: 60px;
+  --sidebar-width: 240px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  line-height: 1.6;
+}
+
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: var(--sidebar-width);
+  background: var(--bg-card);
+  border-right: 1px solid var(--border);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+}
+
+.main-content {
+  flex: 1;
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.frozen-header {
+  position: sticky;
+  top: 0;
+  background: var(--bg-main);
+  z-index: 100;
+  padding: 1rem 0;
+  margin-top: -1rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2rem;
+}
+
+.card {
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+
+.btn {
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover);
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-main);
+}
+
+.btn-outline:hover {
+  background: #f8f9fa;
+}
+
+.btn-warning {
+  background: var(--warning);
+  color: #201f1e;
+}
+
+.nav-item {
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.nav-item:hover,
+.nav-item.active {
+  background: #f0f7ff;
+  color: var(--primary);
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  background: white;
+}
+
+.badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.badge-draft {
+  background: #eee;
+  color: #666;
+}
+
+.badge-submitted {
+  background: #fff4ce;
+  color: #8a6a00;
+}
+
+.badge-approved {
+  background: #dff6dd;
+  color: #107c10;
+}
+
+.badge-rejected {
+  background: #fde7e9;
+  color: #a4262c;
+}
+
+.badge-accrued {
+  background: #e1dfdd;
+  color: #323130;
+}
+
+.attachment-container {
+  position: relative;
+  display: inline-block;
+}
+
+.attachment-preview-hover {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 200px;
+  height: 250px;
+  background: white;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  z-index: 1000;
+  padding: 10px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.attachment-container:hover .attachment-preview-hover {
+  display: block;
+}
+
+.print-only {
+  display: none;
+}
+
+@media print {
+
+  .sidebar,
+  .btn,
+  .nav-item,
+  .no-print {
+    display: none !important;
+  }
+
+  .main-content {
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+}
