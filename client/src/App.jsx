@@ -76,7 +76,7 @@ const LoginPage = ({ users, onLogin }) => {
   );
 };
 
-const Sidebar = ({ user, currentView, onViewChange, onLogout }) => {
+const Sidebar = ({ user, currentView, onViewChange, onLogout, isManagerApprover }) => {
   const hasRole = (role) => user.roles.includes(role);
   return (
     <aside className="sidebar">
@@ -95,7 +95,7 @@ const Sidebar = ({ user, currentView, onViewChange, onLogout }) => {
             <div className={`nav-item ${currentView === 'imports' ? 'active' : ''}`} onClick={() => onViewChange('imports')}>💳 Bank Statements</div>
           </>
         )}
-        {(hasRole('MANAGER') || hasRole('ACCOUNTANT') || hasRole('ADMIN')) && (
+        {isManagerApprover && (
           <div className={`nav-item ${currentView === 'approvals' ? 'active' : ''}`} onClick={() => onViewChange('approvals')}>✅ Approvals Queue</div>
         )}
         {(hasRole('ACCOUNTANT') || hasRole('ADMIN')) && (
@@ -231,9 +231,14 @@ const DetailView = ({ claim, owner, currentUser, entity, onBack, onStatusUpdate,
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className="btn btn-outline" onClick={onBack}>Back</button>
           <button className="btn btn-outline" onClick={() => window.print()}>🖨️ Print Audit Report</button>
-          {mode === 'staff' && (claim.claimStatus === CLAIM_STATUS.NEW || claim.approvalStatus === APPROVAL_STATUS.REJECTED) && (
+          {mode === 'staff' && claim.claimStatus === CLAIM_STATUS.NEW && (
             <button className="btn btn-primary" onClick={() => onEdit(claim)}>
-              {claim.approvalStatus === APPROVAL_STATUS.REJECTED ? '✏️ Edit & Resubmit' : '✏️ Edit Draft'}
+              ✏️ Edit Draft
+            </button>
+          )}
+          {mode === 'finance' && currentUser.roles.includes('ADMIN') && (
+            <button className="btn btn-warning" onClick={() => onEdit(claim)}>
+              ✏️ Admin Edit
             </button>
           )}
           {mode === 'manager' && claim.approvalStatus === APPROVAL_STATUS.PENDING && (
@@ -475,8 +480,15 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
-            <button className="btn btn-outline" disabled={!formData.title} onClick={() => onDraft(formData)}>Save Draft</button>
-            <button className="btn btn-primary" onClick={handleSubmitAttempt}>Submit for Approval</button>
+
+            {user.roles?.includes('ADMIN') && formData.claimStatus !== CLAIM_STATUS.NEW ? (
+              <button className="btn btn-warning" onClick={() => onSave(formData)}>Save Admin Edits</button>
+            ) : (
+              <>
+                <button className="btn btn-outline" disabled={!formData.title} onClick={() => onDraft(formData)}>Save Draft</button>
+                <button className="btn btn-primary" onClick={handleSubmitAttempt}>Submit for Approval</button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1250,6 +1262,13 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [previewReceipt, setPreviewReceipt] = useState(null);
 
+  const isManagerApprover = useMemo(() => {
+    if (!user) return false;
+    if (user.roles.includes('MANAGER')) return true;
+    if (userEntityApprovers && userEntityApprovers.some(ua => ua.approver_id === user.id)) return true;
+    return false;
+  }, [user, userEntityApprovers]);
+
   useEffect(() => {
     if (user) {
       localStorage.setItem('expenseApp_user', JSON.stringify(user));
@@ -1347,7 +1366,9 @@ function App() {
 
       if (cRes.data) {
         let visibleClaims = cRes.data;
-        if (isFin || isMgr) {
+        const isFin = user.roles.includes('ACCOUNTANT') || user.roles.includes('ADMIN');
+
+        if (isFin || isManagerApprover) {
           visibleClaims = cRes.data.filter(c => {
             if (c.user_id === user.id) return true; // Own claims
 
@@ -1355,12 +1376,12 @@ function App() {
             const isAccForEntity = userEntityApprovers.some(ua => ua.user_id === user.id && ua.entity_id === c.entity_id && ua.is_accountant);
             if (isFin && isAccForEntity && c.claim_status !== 'NEW') return true;
 
-            // Check if user is approver for this staff member in this entity
+            // Check if user is explicit approver for this staff member in this entity
             const isApprForUser = userEntityApprovers.some(ua => ua.approver_id === user.id && ua.user_id === c.user_id && ua.entity_id === c.entity_id);
-            if (isMgr && isApprForUser && c.claim_status !== 'NEW') return true;
+            if (isManagerApprover && isApprForUser && c.claim_status !== 'NEW') return true;
 
-            // Optional fallback for legacy direct relationships
-            if (isFin && user.roles.includes('ADMIN')) return true;
+            // Finance/Admin fallback to see all submitted claims in the Compliance Hub
+            if (isFin) return true;
 
             return false;
           });
@@ -1722,7 +1743,7 @@ function App() {
             onStatusUpdate={handleStatusUpdate}
             onEdit={(draft) => { setImportedClaim(draft); setView('new-claim'); setSelectedClaim(null); }}
             onSave={(c) => handleSaveClaim(c)}
-            mode={user.roles.includes('ACCOUNTANT') || user.roles.includes('ADMIN') ? 'finance' : (user.roles.includes('MANAGER') ? 'manager' : 'staff')}
+            mode={view === 'finance' ? 'finance' : (view === 'approvals' ? 'manager' : 'staff')}
             expenseTypes={expenseTypes}
           />
         )}
