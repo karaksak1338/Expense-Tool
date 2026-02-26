@@ -1587,6 +1587,28 @@ function App() {
     return null;
   };
 
+  const handleDeleteClaim = async (claimId) => {
+    if (!window.confirm("Are you sure you want to delete this draft? This cannot be undone.")) return;
+    try {
+      // 1. Find all associated receipts and reset them to UNALLOCATED
+      const { data: positions } = await supabase.from('expense_items').select('backlog_id').eq('claim_id', claimId);
+      const backlogIds = (positions || []).map(p => p.backlog_id).filter(Boolean);
+
+      if (backlogIds.length > 0) {
+        await supabase.from('receipts').update({ status: 'UNALLOCATED' }).in('id', backlogIds);
+      }
+
+      // 2. The database should cascade delete the expense_items, but let's delete the claim.
+      const { error } = await supabase.from('claims').delete().eq('id', claimId);
+      if (error) throw error;
+
+      await fetchData();
+    } catch (err) {
+      console.error("Error deleting claim:", err);
+      alert("Network error: Could not delete claim.");
+    }
+  };
+
   if (!user) return <LoginPage users={users.length > 0 ? users : INITIAL_USERS} onLogin={setUser} />;
 
   const userEntity = entities.find(e => e.id == user.entityId);
@@ -1627,7 +1649,14 @@ function App() {
                     <td style={{ fontWeight: 'bold' }}>€{c.expenses.reduce((acc, e) => acc + Number(e.amount), 0).toFixed(2)}</td>
                     <td><span className={`badge badge-${c.claimStatus.toLowerCase()}`}>{c.claimStatus}</span></td>
                     <td><span className={`badge badge-${c.approvalStatus.replace(' ', '-').toLowerCase()}`}>{c.approvalStatus}</span></td>
-                    <td><button className="btn btn-outline" onClick={() => setSelectedClaim(c)}>View History</button></td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="btn btn-outline" onClick={() => setSelectedClaim(c)}>View History</button>
+                        {c.claimStatus === CLAIM_STATUS.NEW && (
+                          <button className="btn btn-outline" style={{ color: 'var(--error)', borderColor: 'var(--error)' }} onClick={() => handleDeleteClaim(c.id)}>🗑️</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}</tbody>
               </table>
