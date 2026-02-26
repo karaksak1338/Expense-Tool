@@ -447,7 +447,7 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
-            <button className="btn btn-outline" onClick={() => onDraft(formData)}>Save Draft</button>
+            <button className="btn btn-outline" disabled={!formData.title} onClick={() => onDraft(formData)}>Save Draft</button>
             <button className="btn btn-primary" disabled={!isFormValid} onClick={() => onSave({ ...formData, claimStatus: CLAIM_STATUS.SUBMITTED, approvalStatus: APPROVAL_STATUS.PENDING })}>Submit for Approval</button>
           </div>
         </div>
@@ -1492,13 +1492,20 @@ function App() {
       }
 
       // 1. Save Claim Base
+      const safeClaim = {
+        id: dbBase.id,
+        title: dbBase.title,
+        user_id: user.id,
+        entity_id: dbBase.entity_id,
+        advance_amount: Number(dbBase.advance_amount) || 0,
+        claim_status: dbBase.claim_status,
+        approval_status: dbBase.approval_status,
+        submission_date: dbBase.claim_status === CLAIM_STATUS.SUBMITTED ? new Date().toISOString() : (dbBase.submission_date ? new Date(dbBase.submission_date).toISOString() : null)
+      };
+
       const { data: claim, error: cErr } = await supabase
         .from('claims')
-        .upsert({
-          ...dbBase,
-          user_id: user.id,
-          submission_date: dbBase.claim_status === CLAIM_STATUS.SUBMITTED ? new Date() : (dbBase.submission_date || new Date())
-        })
+        .upsert(safeClaim)
         .select()
         .single();
 
@@ -1515,16 +1522,22 @@ function App() {
         await supabase.from('expense_items').delete().eq('claim_id', claim.id);
 
         const expensePayload = expenses.map(e => {
-          const ep = {
-            ...e,
+          return {
+            id: e.id && String(e.id).includes('.') ? e.id : String(Date.now() + Math.random()),
             claim_id: claim.id,
-            id: e.id && String(e.id).includes('.') ? e.id : String(Date.now() + Math.random())
+            type: e.type,
+            amount: Number(e.amount) || 0,
+            currency: e.currency, // From the specific expense position
+            payment: e.payment,
+            receipt: e.receipt,
+            project: e.project,
+            department: e.department,
+            description: e.description,
+            backlog_id: e.backlogId || e.backlog_id,
+            clients: e.clients,
+            attendees: e.attendees ? Number(e.attendees) : null,
+            purpose: e.purpose
           };
-          if (ep.backlogId !== undefined) {
-            ep.backlog_id = ep.backlogId;
-            delete ep.backlogId;
-          }
-          return ep;
         });
         const { error: eErr } = await supabase.from('expense_items').insert(expensePayload);
         if (eErr) throw eErr;
