@@ -1463,6 +1463,10 @@ function App() {
       const { expenses, ...claimBase } = claimData;
 
       const dbBase = { ...claimBase };
+      if (dbBase.id && String(dbBase.id).startsWith('DRAFT-')) {
+        // The DB expects a TEXT primary key. Gen one since it has no default value.
+        dbBase.id = crypto.randomUUID ? crypto.randomUUID() : `CLAIM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      }
       if (dbBase.currency !== undefined) {
         delete dbBase.currency; // Currency is stored on expense_items, not claims table
       }
