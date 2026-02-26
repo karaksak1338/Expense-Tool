@@ -430,6 +430,10 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
     const updated = formData.expenses.map(e => e.id === id ? { ...e, [field]: value } : e);
     setFormData({ ...formData, expenses: updated });
   };
+  const updateExpenseFields = (id, updates) => {
+    const updated = formData.expenses.map(e => e.id === id ? { ...e, ...updates } : e);
+    setFormData({ ...formData, expenses: updated });
+  };
 
   return (
     <div className="view">
@@ -529,25 +533,42 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
                       </div>
                       <div className="form-group">
                         <label>Receipt Attachment</label>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <input value={exp.receipt || ''} readOnly placeholder="Drag here or click →" onClick={() => document.getElementById(`file-upload-${exp.id}`).click()} style={{ cursor: 'pointer' }} />
-                          <input id={`file-upload-${exp.id}`} type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={(e) => {
-                            const file = e.target.files[0];
-                            if (file) {
-                              const newExpenses = [...formData.expenses];
-                              newExpenses[idx].receipt = file.name;
-                              setFormData({ ...formData, expenses: newExpenses });
-
-                              // Cache file locally for preview
-                              const reader = new FileReader();
-                              reader.onload = (ev) => {
-                                localStorage.setItem(`receipt_blob_${file.name}`, ev.target.result);
-                              };
-                              reader.readAsDataURL(file);
-                            }
-                          }} />
-                          <button className="btn btn-primary" style={{ fontSize: '0.75rem' }} onClick={() => document.getElementById(`file-upload-${exp.id}`).click()}>Library</button>
-                        </div>
+                        {exp.receipt ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#f5f5f5', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ddd' }}>
+                            <span style={{ fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => onPreview && onPreview(exp.receipt)}>📄</span>
+                            <span style={{ cursor: 'pointer', textDecoration: 'underline', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => onPreview && onPreview(exp.receipt)}>
+                              {exp.receipt}
+                            </span>
+                            <button className="btn btn-outline" style={{ padding: '0.2rem 0.5rem', color: 'var(--error)', borderColor: 'var(--error)' }} onClick={() => updateExpenseFields(exp.id, { receipt: null, backlogId: null })}>
+                              Remove
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <input id={`file-upload-${exp.id}`} type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={(e) => {
+                              const file = e.target.files[0];
+                              if (file) {
+                                // Cache file locally for preview
+                                const reader = new FileReader();
+                                reader.onload = (ev) => {
+                                  localStorage.setItem(`receipt_blob_${file.name}`, ev.target.result);
+                                  if (onUploadReceipt) {
+                                    onUploadReceipt(file).then(rId => {
+                                      if (rId) updateExpenseFields(exp.id, { receipt: file.name, backlogId: rId });
+                                    });
+                                  } else {
+                                    updateExpenseFields(exp.id, { receipt: file.name });
+                                  }
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }} />
+                            <div style={{ flex: 1, border: '1px dashed #ccc', borderRadius: '4px', padding: '0.4rem', color: '#999', cursor: 'pointer', textAlign: 'center', fontSize: '0.85rem' }} onClick={() => document.getElementById(`file-upload-${exp.id}`).click()}>
+                              Upload local file...
+                            </div>
+                            <button className="btn btn-primary" style={{ fontSize: '0.75rem' }} onClick={() => setShowLibrary(true)}>Library</button>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -597,7 +618,7 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
             <p style={{ fontSize: '0.75rem', color: '#666', marginBottom: '1rem' }}>Drag a receipt onto an expense card.</p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {(receipts || []).map(r => (
+              {(receipts || []).filter(r => !formData.expenses.some(e => e.backlogId === r.id)).map(r => (
                 <div
                   key={r.id}
                   draggable
@@ -1473,7 +1494,12 @@ function App() {
       if (cErr) throw cErr;
 
       // 2. Save Normalized Expenses
+      let oldBacklogIds = [];
       if (expenses && expenses.length > 0) {
+        // Find previously allocated receipts so we can release them if removed
+        const { data: oldExpenses } = await supabase.from('expense_items').select('backlog_id').eq('claim_id', claim.id);
+        oldBacklogIds = (oldExpenses || []).map(e => e.backlog_id).filter(Boolean);
+
         // Delete old expenses if updating
         await supabase.from('expense_items').delete().eq('claim_id', claim.id);
 
@@ -1486,10 +1512,15 @@ function App() {
         if (eErr) throw eErr;
       }
 
-      // 3. Clean up allocated receipts
+      // 3. Clean up allocated receipts vs released receipts
       const allocatedBacklogIds = (expenses || []).filter(e => e.backlogId).map(e => e.backlogId);
       if (allocatedBacklogIds.length > 0) {
-        await supabase.from('receipts').delete().in('id', allocatedBacklogIds);
+        await supabase.from('receipts').update({ status: 'ALLOCATED' }).in('id', allocatedBacklogIds);
+      }
+
+      const unallocatedBacklogIds = oldBacklogIds.filter(id => !allocatedBacklogIds.includes(id));
+      if (unallocatedBacklogIds.length > 0) {
+        await supabase.from('receipts').update({ status: 'UNALLOCATED' }).in('id', unallocatedBacklogIds);
       }
 
       await fetchData();
@@ -1526,6 +1557,23 @@ function App() {
     } catch (err) {
       alert('Network error during update');
     }
+  };
+
+  const handleLocalReceiptUpload = async (file) => {
+    const newReceipt = {
+      id: `R${Date.now()}`,
+      user_id: user.id,
+      file_name: file.name,
+      status: 'UNALLOCATED',
+      amount_suggestion: 0,
+      vendor_suggestion: 'Local Upload'
+    };
+    const { error } = await supabase.from('receipts').insert(newReceipt);
+    if (!error) {
+      setReceipts(prev => [...prev, newReceipt]);
+      return newReceipt.id;
+    }
+    return null;
   };
 
   if (!user) return <LoginPage users={users.length > 0 ? users : INITIAL_USERS} onLogin={setUser} />;
@@ -1595,7 +1643,7 @@ function App() {
           <ClaimForm
             user={user}
             claim={importedClaim}
-            entities={entities.filter(e => e.id === user.entityId || userEntityApprovers.some(ua => ua.user_id === user.id && ua.entity_id === e.id))}
+            entities={entities}
             expenseTypes={expenseTypes}
             projects={projects}
             departments={departments}
@@ -1604,6 +1652,7 @@ function App() {
             onSave={handleSaveClaim}
             onDraft={handleSaveClaim}
             onPreview={setPreviewReceipt}
+            onUploadReceipt={handleLocalReceiptUpload}
           />
         )}
 
