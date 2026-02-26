@@ -1745,8 +1745,29 @@ function App() {
                 <p style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{receipts.length || 0}</p>
                 <small style={{ color: '#666' }}>Click to Allocate →</small>
               </div>
-              <div className="card"><h4>Action Required</h4><p>{claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING).length || 0}</p></div>
-              <div className="card"><h4>Completed</h4><p>{claims.filter(c => c.claimStatus === CLAIM_STATUS.CLOSED).length || 0}</p></div>
+              <div className="card">
+                <h4>Action Required</h4>
+                <p>
+                  {isManagerApprover
+                    ? claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING && c.userId != user.id && userEntityApprovers.some(ua => ua.approver_id == user.id && ua.user_id == c.userId && ua.entity_id == c.entityId)).length
+                    : claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING).length
+                  }
+                </p>
+              </div>
+              <div className="card">
+                <h4>Completed</h4>
+                <p>
+                  {isManagerApprover
+                    ? claims.filter(c => {
+                      if (c.approvalStatus === APPROVAL_STATUS.PENDING || c.claimStatus === CLAIM_STATUS.NEW || c.userId == user.id) return false;
+                      const actedOnIt = (c.history || []).some(h => h.actorId == user.id);
+                      const isMappedApproverForIt = userEntityApprovers.some(ua => ua.approver_id == user.id && ua.user_id == c.userId && ua.entity_id == c.entityId);
+                      return actedOnIt || isMappedApproverForIt;
+                    }).length
+                    : claims.filter(c => c.claimStatus === CLAIM_STATUS.CLOSED).length
+                  }
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -1915,7 +1936,13 @@ function App() {
               <div>
                 <h3>Processed History</h3>
                 <div className="card" style={{ marginTop: '0.5rem', maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
-                  {claims.filter(c => c.approvalStatus !== APPROVAL_STATUS.PENDING && c.claimStatus !== CLAIM_STATUS.NEW && c.userId != user.id).map(c => (
+                  {claims.filter(c => {
+                    if (c.approvalStatus === APPROVAL_STATUS.PENDING || c.claimStatus === CLAIM_STATUS.NEW || c.userId == user.id) return false;
+                    // For history, they either explicitly acted on it, or they are currently the mapped approver for that staff/entity
+                    const actedOnIt = (c.history || []).some(h => h.actorId == user.id);
+                    const isMappedApproverForIt = userEntityApprovers.some(ua => ua.approver_id == user.id && ua.user_id == c.userId && ua.entity_id == c.entityId);
+                    return actedOnIt || isMappedApproverForIt;
+                  }).map(c => (
                     <div key={c.id} style={{ padding: '0.75rem 0', borderBottom: '1px solid #f0f0f0' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <strong style={{ fontSize: '0.85rem' }}>{c.title}</strong>
