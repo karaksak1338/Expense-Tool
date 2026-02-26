@@ -531,11 +531,19 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
                         <label>Receipt Attachment</label>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <input value={exp.receipt || ''} readOnly placeholder="Drag here or click →" onClick={() => document.getElementById(`file-upload-${exp.id}`).click()} style={{ cursor: 'pointer' }} />
-                          <input id={`file-upload-${exp.id}`} type="file" style={{ display: 'none' }} onChange={(e) => {
-                            if (e.target.files[0]) {
+                          <input id={`file-upload-${exp.id}`} type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={(e) => {
+                            const file = e.target.files[0];
+                            if (file) {
                               const newExpenses = [...formData.expenses];
-                              newExpenses[idx].receipt = e.target.files[0].name;
+                              newExpenses[idx].receipt = file.name;
                               setFormData({ ...formData, expenses: newExpenses });
+
+                              // Cache file locally for preview
+                              const reader = new FileReader();
+                              reader.onload = (ev) => {
+                                localStorage.setItem(`receipt_blob_${file.name}`, ev.target.result);
+                              };
+                              reader.readAsDataURL(file);
                             }
                           }} />
                           <button className="btn btn-primary" style={{ fontSize: '0.75rem' }} onClick={() => document.getElementById(`file-upload-${exp.id}`).click()}>Library</button>
@@ -763,7 +771,13 @@ const ReceiptBacklog = ({ user, onAllocate, onBack, onPreview }) => {
   const onFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      handleSimulateUpload(file.name);
+      // Cache file locally for preview
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        localStorage.setItem(`receipt_blob_${file.name}`, ev.target.result);
+        handleSimulateUpload(file.name);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -1736,10 +1750,16 @@ function App() {
                 <h3 style={{ margin: 0, color: 'var(--primary)' }}>Receipt Preview</h3>
                 <button className="btn btn-outline" style={{ padding: '0.2rem 0.5rem' }} onClick={() => setPreviewReceipt(null)}>Close</button>
               </div>
-              <div style={{ padding: '2rem', background: '#fcfcfc', borderRadius: '4px', border: '1px dashed #ccc' }}>
-                <span style={{ fontSize: '4rem' }}>📄</span>
-                <h4 style={{ marginTop: '1rem', color: '#444' }}>{previewReceipt}</h4>
-                <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>Local preview simulation. (Files uploaded to Supabase Storage would render directly here.)</p>
+              <div style={{ padding: '1rem', background: '#fcfcfc', borderRadius: '4px', border: '1px dashed #ccc' }}>
+                {localStorage.getItem(`receipt_blob_${previewReceipt}`) ? (
+                  <img src={localStorage.getItem(`receipt_blob_${previewReceipt}`)} alt="Receipt" style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }} />
+                ) : (
+                  <>
+                    <span style={{ fontSize: '4rem' }}>📄</span>
+                    <h4 style={{ marginTop: '1rem', color: '#444' }}>{previewReceipt}</h4>
+                    <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>Local preview simulation. (Files uploaded to Supabase Storage would render directly here.)</p>
+                  </>
+                )}
               </div>
             </div>
           </div>
