@@ -1312,9 +1312,26 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let claimsSub;
     if (user) {
       fetchUserData();
+
+      // Auto-sync other browser tabs in realtime when a Claim goes through Approval/Submission
+      claimsSub = supabase
+        .channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'claims' },
+          () => {
+            fetchUserData();
+          }
+        )
+        .subscribe();
     }
+
+    return () => {
+      if (claimsSub) supabase.removeChannel(claimsSub);
+    };
   }, [user, userEntityApprovers]);
 
   const fetchGlobalData = async () => {
@@ -1658,10 +1675,17 @@ function App() {
         ...update
       }];
 
+      // Convert camelCase to snake_case for Supabase REST requirements
+      const dbUpdate = { history: newHistory };
+      if (update.approvalStatus !== undefined) dbUpdate.approval_status = update.approvalStatus;
+      if (update.claimStatus !== undefined) dbUpdate.claim_status = update.claimStatus;
+      if (update.managerApprovedAt !== undefined) dbUpdate.manager_approved_at = update.managerApprovedAt;
+      if (update.accountantApprovedAt !== undefined) dbUpdate.accountant_approved_at = update.accountantApprovedAt;
+
       // 2. Update status and history
       const { error } = await supabase
         .from('claims')
-        .update({ ...update, history: newHistory })
+        .update(dbUpdate)
         .eq('id', id);
 
       if (error) {
