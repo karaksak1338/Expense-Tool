@@ -435,6 +435,34 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
     setFormData({ ...formData, expenses: updated });
   };
 
+  const handleSubmitAttempt = (e) => {
+    e.preventDefault();
+    if (!formData.title) return alert("Please enter a Claim Title.");
+    if (!formData.entityId || (availableCurrencies.length > 0 && !formData.currency)) {
+      return alert("Please select a Legal Entity and Claim Currency.");
+    }
+    if (formData.expenses.length === 0) return alert("Please add at least one expense position.");
+
+    for (let i = 0; i < formData.expenses.length; i++) {
+      const exp = formData.expenses[i];
+      if (!exp.type || !exp.amount || !exp.receipt) {
+        return alert(`Position ${i + 1} is missing basic info (Type, Amount, or Receipt).`);
+      }
+      if (mandatory.project && !exp.project) {
+        return alert(`Position ${i + 1} is missing a mandatory Project.`);
+      }
+      if (mandatory.department && !exp.department) {
+        return alert(`Position ${i + 1} is missing a mandatory Department.`);
+      }
+      const typeCfg = expenseTypes.find(t => t.label === exp.type);
+      if (typeCfg?.requiresEntertainment && (!exp.clients || !exp.purpose || !exp.attendees)) {
+        return alert(`Position ${i + 1} is an Entertainment expense and requires Clients, Purpose, and Attendees details.`);
+      }
+    }
+
+    onSave({ ...formData, claimStatus: CLAIM_STATUS.SUBMITTED, approvalStatus: APPROVAL_STATUS.PENDING });
+  };
+
   return (
     <div className="view">
       <div className="frozen-header">
@@ -448,7 +476,7 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
             <button className="btn btn-outline" disabled={!formData.title} onClick={() => onDraft(formData)}>Save Draft</button>
-            <button className="btn btn-primary" disabled={!isFormValid} onClick={() => onSave({ ...formData, claimStatus: CLAIM_STATUS.SUBMITTED, approvalStatus: APPROVAL_STATUS.PENDING })}>Submit for Approval</button>
+            <button className="btn btn-primary" onClick={handleSubmitAttempt}>Submit for Approval</button>
           </div>
         </div>
       </div>
@@ -1608,6 +1636,7 @@ function App() {
   };
 
   const handleDeleteClaim = async (claimId) => {
+    if (!window.confirm("Are you sure you want to delete this draft? This cannot be undone.")) return;
     try {
       // 1. Find all associated receipts and reset them to UNALLOCATED
       const { data: positions } = await supabase.from('expense_items').select('backlog_id').eq('claim_id', claimId);
@@ -1798,7 +1827,7 @@ function App() {
               <div>
                 <h3>Pending Approvals</h3>
                 <div className="card" style={{ marginTop: '0.5rem' }}>
-                  {claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING).map(c => (
+                  {claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING && c.userId != user.id).map(c => (
                     <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem 0', borderBottom: '1px solid #f0f0f0', alignItems: 'center' }}>
                       <div>
                         <strong>{c.title}</strong> by {users.find(u => u.id == c.userId)?.name}
@@ -1810,7 +1839,7 @@ function App() {
                       </div>
                     </div>
                   ))}
-                  {claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING).length === 0 && (
+                  {claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING && c.userId != user.id).length === 0 && (
                     <p style={{ textAlign: 'center', padding: '2rem', color: '#888' }}>No pending approvals.</p>
                   )}
                 </div>
@@ -1819,7 +1848,7 @@ function App() {
               <div>
                 <h3>Processed History</h3>
                 <div className="card" style={{ marginTop: '0.5rem', maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
-                  {claims.filter(c => c.approvalStatus !== APPROVAL_STATUS.PENDING && c.claimStatus !== CLAIM_STATUS.NEW).map(c => (
+                  {claims.filter(c => c.approvalStatus !== APPROVAL_STATUS.PENDING && c.claimStatus !== CLAIM_STATUS.NEW && c.userId != user.id).map(c => (
                     <div key={c.id} style={{ padding: '0.75rem 0', borderBottom: '1px solid #f0f0f0' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <strong style={{ fontSize: '0.85rem' }}>{c.title}</strong>
@@ -1829,7 +1858,7 @@ function App() {
                       <button className="btn btn-outline" style={{ fontSize: '0.7rem', width: '100%', marginTop: '8px', padding: '2px' }} onClick={() => setSelectedClaim(c)}>View Audit Details</button>
                     </div>
                   ))}
-                  {claims.filter(c => c.approvalStatus !== APPROVAL_STATUS.PENDING && c.claimStatus !== CLAIM_STATUS.NEW).length === 0 && (
+                  {claims.filter(c => c.approvalStatus !== APPROVAL_STATUS.PENDING && c.claimStatus !== CLAIM_STATUS.NEW && c.userId != user.id).length === 0 && (
                     <p style={{ textAlign: 'center', color: '#aaa', fontSize: '0.8rem' }}>No history yet.</p>
                   )}
                 </div>
