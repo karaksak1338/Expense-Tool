@@ -1479,6 +1479,10 @@ function App() {
         dbBase.entity_id = dbBase.entityId;
         delete dbBase.entityId;
       }
+      if (dbBase.userId !== undefined) {
+        dbBase.user_id = dbBase.userId;
+        delete dbBase.userId;
+      }
 
       // 1. Save Claim Base
       const { data: claim, error: cErr } = await supabase
@@ -1801,7 +1805,11 @@ function App() {
               </div>
               <div style={{ padding: '1rem', background: '#fcfcfc', borderRadius: '4px', border: '1px dashed #ccc' }}>
                 {localStorage.getItem(`receipt_blob_${previewReceipt}`) ? (
-                  <img src={localStorage.getItem(`receipt_blob_${previewReceipt}`)} alt="Receipt" style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }} />
+                  localStorage.getItem(`receipt_blob_${previewReceipt}`).startsWith('data:application/pdf') ? (
+                    <embed src={localStorage.getItem(`receipt_blob_${previewReceipt}`)} type="application/pdf" width="100%" height="400px" />
+                  ) : (
+                    <img src={localStorage.getItem(`receipt_blob_${previewReceipt}`)} alt="Receipt" style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain' }} />
+                  )
                 ) : (
                   <>
                     <span style={{ fontSize: '4rem' }}>📄</span>
