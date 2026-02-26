@@ -178,7 +178,7 @@ const ClaimReport = ({ claim, user, entity }) => (
   </div>
 );
 
-const DetailView = ({ claim, owner, currentUser, entity, onBack, onStatusUpdate, onEdit, onSave, mode, expenseTypes }) => {
+const DetailView = ({ claim, owner, currentUser, entity, onBack, onStatusUpdate, onEdit, onSave, mode, expenseTypes, onPreview }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [syncing, setSyncing] = useState(false);
   const [history, setHistory] = useState([]);
@@ -295,7 +295,11 @@ const DetailView = ({ claim, owner, currentUser, entity, onBack, onStatusUpdate,
                     </div>
                     <strong>€{e.amount}</strong>
                     <div className="attachment-container">
-                      <span style={{ color: 'var(--primary)', cursor: 'pointer' }}>📎 Receipt attached</span>
+                      {e.receipt ? (
+                        <span style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }} onClick={() => onPreview && onPreview(e.receipt)}>📎 {e.receipt}</span>
+                      ) : (
+                        <span style={{ color: '#999' }}>No receipt</span>
+                      )}
                     </div>
                   </div>
 
@@ -369,7 +373,7 @@ const DetailView = ({ claim, owner, currentUser, entity, onBack, onStatusUpdate,
   );
 };
 
-const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes, receipts, onCancel, onSave, onDraft }) => {
+const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes, receipts, onCancel, onSave, onDraft, onPreview }) => {
   const availableEntities = entities || [];
   const [selectedEntityId, setSelectedEntityId] = useState(claim?.entityId || (availableEntities.length === 1 ? availableEntities[0].id : ''));
   const activeEntity = availableEntities.find(e => e.id === selectedEntityId) || {};
@@ -438,24 +442,6 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <input type="file" ref={claimFileInputRef} style={{ display: 'none' }} multiple onChange={(e) => {
-              const files = Array.from(e.target.files);
-              const newExpenses = [...formData.expenses];
-              files.forEach(f => {
-                newExpenses.push({
-                  id: Date.now() + Math.random(),
-                  type: 'Other',
-                  amount: Math.floor(Math.random() * 50) + 5,
-                  currency: 'EUR',
-                  payment: 'REIMBURSABLE',
-                  receipt: f.name,
-                  description: `Bulk Upload: ${f.name}`
-                });
-              });
-              setFormData({ ...formData, expenses: newExpenses });
-              alert(`AI metadata extraction simulated for ${files.length} receipts!`);
-            }} />
-            <button className="btn btn-outline" onClick={() => claimFileInputRef.current.click()}>⚡ Bulk AI Allocation</button>
             <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
             <button className="btn btn-outline" onClick={() => onDraft(formData)}>Save Draft</button>
             <button className="btn btn-primary" disabled={!isFormValid} onClick={() => onSave({ ...formData, claimStatus: CLAIM_STATUS.SUBMITTED, approvalStatus: APPROVAL_STATUS.PENDING })}>Submit for Approval</button>
@@ -537,8 +523,8 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
                       <div className="form-group">
                         <label>Payment</label>
                         <select value={exp.payment} onChange={e => updateExpense(exp.id, 'payment', e.target.value)}>
+                          <option value="COMPANY_CREDITCARD">Company Creditcard</option>
                           <option value="REIMBURSABLE">Reimbursable</option>
-                          <option value="COMPANY_CARD">Company Card</option>
                         </select>
                       </div>
                       <div className="form-group">
@@ -552,7 +538,7 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
                               setFormData({ ...formData, expenses: newExpenses });
                             }
                           }} />
-                          <button className="btn btn-primary" style={{ fontSize: '0.75rem' }} onClick={() => setShowLibrary(true)}>Library</button>
+                          <button className="btn btn-primary" style={{ fontSize: '0.75rem' }} onClick={() => document.getElementById(`file-upload-${exp.id}`).click()}>Library</button>
                         </div>
                       </div>
                     </div>
@@ -589,7 +575,7 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
                   </div>
                 );
               })}
-              <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => setFormData({ ...formData, expenses: [...formData.expenses, { id: Date.now(), type: '', amount: 0, currency: selectedCurrency, payment: 'REIMBURSABLE', receipt: null, project: '', department: '' }] })}>+ Add New Position</button>
+              <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => setFormData({ ...formData, expenses: [...formData.expenses, { id: Date.now(), type: '', amount: 0, currency: selectedCurrency, payment: 'COMPANY_CREDITCARD', receipt: null, project: '', department: '' }] })}>+ Add New Position</button>
             </>
           )}
         </div>
@@ -611,9 +597,9 @@ const ClaimForm = ({ user, claim, entities, projects, departments, expenseTypes,
                   style={{ padding: '0.8rem', border: '1px solid #eee', borderRadius: '6px', cursor: 'grab', background: 'white' }}
                 >
                   <div style={{ display: 'flex', gap: '10px' }}>
-                    <span style={{ fontSize: '1.5rem' }}>📄</span>
+                    <span style={{ fontSize: '1.5rem', cursor: 'pointer' }} onClick={() => onPreview && onPreview(r.file_name)}>📄</span>
                     <div style={{ overflow: 'hidden' }}>
-                      <strong style={{ display: 'block', fontSize: '0.85rem' }}>{r.file_name}</strong>
+                      <strong style={{ display: 'block', fontSize: '0.85rem', cursor: 'pointer' }} onClick={() => onPreview && onPreview(r.file_name)}>{r.file_name}</strong>
                       <small style={{ color: 'var(--primary)', fontWeight: 'bold' }}>€{r.amount_suggestion}</small>
                       <div style={{ fontSize: '0.7rem', color: '#888' }}>{r.vendor_suggestion}</div>
                     </div>
@@ -723,7 +709,7 @@ const ImportPortal = ({ entities, user, onImportComplete }) => {
   );
 };
 
-const ReceiptBacklog = ({ user, onAllocate, onBack }) => {
+const ReceiptBacklog = ({ user, onAllocate, onBack, onPreview }) => {
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(false);
   const fileInputRef = React.useRef(null);
@@ -803,7 +789,6 @@ const ReceiptBacklog = ({ user, onAllocate, onBack }) => {
           <button className="btn btn-outline" onClick={onBack}>Back</button>
           <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={onFileChange} />
           <button className="btn btn-primary" onClick={() => fileInputRef.current.click()}>+ Upload from Local Machine</button>
-          <button className="btn btn-outline" style={{ fontSize: '0.8rem' }} onClick={() => handleSimulateUpload()}>Simulate Magic</button>
         </div>
       </div>
 
@@ -811,11 +796,11 @@ const ReceiptBacklog = ({ user, onAllocate, onBack }) => {
         {loading ? <p>Loading backlog...</p> : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1.5rem' }}>
             {receipts.map(r => (
-              <div key={r.id} className="card" style={{ padding: '1rem', border: '1px solid #eee', position: 'relative' }}>
+              <div key={r.id} className="card" style={{ padding: '1rem', border: '1px solid #eee', position: 'relative', cursor: 'pointer' }} onClick={() => onPreview && onPreview(r.file_name)}>
                 <div style={{ background: '#f5f5f5', height: '120px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '0.8rem' }}>
                   <span style={{ fontSize: '2rem' }}>📄</span>
                 </div>
-                <strong>{r.file_name}</strong>
+                <strong style={{ cursor: 'pointer', textDecoration: 'underline' }}>{r.file_name}</strong>
                 <p style={{ fontSize: '0.75rem', color: '#666', margin: '0.4rem 0' }}>Uploaded: {new Date(r.created_at).toLocaleDateString()}</p>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.8rem' }}>
                   <small style={{ color: 'var(--primary)', fontWeight: 'bold' }}>€{r.amount_suggestion}</small>
@@ -1182,8 +1167,13 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, use
 // --- MAIN APP ---
 
 function App() {
-  const [user, setUser] = useState(null);
-  const [view, setView] = useState('dashboard');
+  const [user, setUser] = useState(() => {
+    const savedUser = localStorage.getItem('expenseApp_user');
+    return savedUser ? JSON.parse(savedUser) : null;
+  });
+  const [view, setView] = useState(() => {
+    return localStorage.getItem('expenseApp_view') || 'dashboard';
+  });
   const [claims, setClaims] = useState([]);
   const [entities, setEntities] = useState([]);
   const [expenseTypes, setExpenseTypes] = useState([]);
@@ -1195,6 +1185,22 @@ function App() {
   const [selectedClaim, setSelectedClaim] = useState(null);
   const [importedClaim, setImportedClaim] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [previewReceipt, setPreviewReceipt] = useState(null);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('expenseApp_user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('expenseApp_user');
+      localStorage.removeItem('expenseApp_view');
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('expenseApp_view', view);
+    }
+  }, [view, user]);
 
   useEffect(() => {
     // Ensure all paths resolve to root for this SPA
@@ -1302,6 +1308,8 @@ function App() {
           userId: c.user_id,
           entityId: c.entity_id,
           currency: c.currency,
+          claimStatus: c.claim_status,
+          approvalStatus: c.approval_status,
           expenses: (c.expense_items || []).map(e => ({
             ...e,
             backlogId: e.backlog_id
@@ -1563,6 +1571,7 @@ function App() {
             onCancel={() => { setView('dashboard'); setImportedClaim(null); }}
             onSave={handleSaveClaim}
             onDraft={handleSaveClaim}
+            onPreview={setPreviewReceipt}
           />
         )}
 
@@ -1699,6 +1708,23 @@ function App() {
             onSaveItem={handleSaveAdminItem}
             onDeleteItem={handleDeleteAdminItem}
           />
+        )}
+
+        {/* Global Receipt Preview Modal */}
+        {previewReceipt && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }} onClick={() => setPreviewReceipt(null)}>
+            <div style={{ background: 'white', padding: '1rem', borderRadius: '8px', minWidth: '300px', maxWidth: '80vw', maxHeight: '80vh', overflow: 'auto', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>
+                <h3 style={{ margin: 0, color: 'var(--primary)' }}>Receipt Preview</h3>
+                <button className="btn btn-outline" style={{ padding: '0.2rem 0.5rem' }} onClick={() => setPreviewReceipt(null)}>Close</button>
+              </div>
+              <div style={{ padding: '2rem', background: '#fcfcfc', borderRadius: '4px', border: '1px dashed #ccc' }}>
+                <span style={{ fontSize: '4rem' }}>📄</span>
+                <h4 style={{ marginTop: '1rem', color: '#444' }}>{previewReceipt}</h4>
+                <p style={{ fontSize: '0.85rem', color: '#666', marginTop: '0.5rem' }}>Local preview simulation. (Files uploaded to Supabase Storage would render directly here.)</p>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </div>
