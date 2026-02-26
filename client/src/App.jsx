@@ -1591,7 +1591,6 @@ function App() {
   };
 
   const handleDeleteClaim = async (claimId) => {
-    if (!window.confirm("Are you sure you want to delete this draft? This cannot be undone.")) return;
     try {
       // 1. Find all associated receipts and reset them to UNALLOCATED
       const { data: positions } = await supabase.from('expense_items').select('backlog_id').eq('claim_id', claimId);
