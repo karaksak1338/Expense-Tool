@@ -506,6 +506,15 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
     expenses: []
   });
 
+  // Critical for draft persistence: re-initialize state if the 'claim' prop changes (e.g. on edit)
+  useEffect(() => {
+    if (claim) {
+      setFormData(claim);
+      if (claim.entityId) setSelectedEntityId(claim.entityId);
+      if (claim.currency) setSelectedCurrency(claim.currency);
+    }
+  }, [claim]);
+
   useEffect(() => {
     setFormData(prev => ({ ...prev, entityId: selectedEntityId, currency: selectedCurrency }));
   }, [selectedEntityId, selectedCurrency]);
@@ -2040,7 +2049,7 @@ function App() {
           ...c,
           userId: c.user_id,
           entityId: c.entity_id,
-          currency: c.currency,
+          currency: c.currency || (c.expense_items && c.expense_items[0]?.claim_currency) || (c.id.includes('-') ? c.id.split('-').pop() : 'EUR'),
           claimStatus: c.claim_status,
           approvalStatus: c.approval_status,
           expenses: (c.expense_items || []).map(e => ({
@@ -2231,12 +2240,16 @@ function App() {
       const safeClaim = {
         id: dbBase.id,
         title: dbBase.title,
-        user_id: dbBase.user_id || user.id, // Preserve original submitter if already exists!
+        user_id: dbBase.user_id || user.id,
         entity_id: dbBase.entity_id,
         approver_id: dbBase.approver_id,
+        currency: claimData.currency || (expenses && expenses[0]?.currency) || 'EUR',
         advance_amount: Number(dbBase.advance_amount) || 0,
         claim_status: dbBase.claim_status,
         approval_status: dbBase.approval_status,
+        claim_type: claimData.claim_type || 'CashReimbursement',
+        statement_attachment: claimData.statement_attachment || null,
+        import_batch_id: claimData.import_batch_id || null,
         submission_date: dbBase.claim_status === CLAIM_STATUS.SUBMITTED ? new Date().toISOString() : (dbBase.submission_date ? new Date(dbBase.submission_date).toISOString() : null)
       };
 
@@ -2301,6 +2314,7 @@ function App() {
             purpose: e.purpose,
 
             // Persistence for statement-imported fields
+            billing_date: e.date || null,
             billing_amount: Number(e.billing_amount) || Number(e.amount) || 0,
             billing_currency: e.payment_type === 'CompanyCard'
               ? (e.billing_currency || entities.find(el => el.id == (claimBase.entity_id || claimBase.entityId))?.primary_currency || 'EUR')
