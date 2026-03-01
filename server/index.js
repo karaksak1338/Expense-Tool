@@ -10,6 +10,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Global request logger
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
+
+app.get('/api/health', (req, res) => res.send('OK'));
+
 process.on('uncaughtException', (err) => {
     console.error('CRITICAL: UNCAUGHT EXCEPTION:', err.stack || err);
     process.exit(1);
@@ -195,7 +203,7 @@ app.post('/api/extract-statement', upload.single('statement'), async (req, res) 
         };
 
         const model = genAI.getGenerativeModel({
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.5-flash',
             generationConfig: {
                 responseMimeType: 'application/json',
                 responseSchema: statementSchema,
@@ -210,7 +218,7 @@ app.post('/api/extract-statement', upload.single('statement'), async (req, res) 
         res.json({
             raw_json: extractedText,
             transactions: parsed.transactions || [],
-            model_version: 'gemini-1.5-flash'
+            model_version: 'gemini-2.5-flash'
         });
 
     } catch (error) {

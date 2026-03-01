@@ -68,11 +68,21 @@ Go to **Settings > Environment Variables** in your Vercel Project and add:
 
 In your Supabase Dashboard (**Settings > API**), ensure the Vercel deployment URL (e.g., `https://expense-tool.vercel.app`) is added to the **CORS Allowed Origins** list.
 
-## 5. Deployment Step
+## 5. Deployment Step & Vercel Settings
 
+When importing the project into Vercel, use these settings:
+
+1.  **Framework Preset**: Select `Vite`.
+2.  **Root Directory**: Set this to `client`.
+3.  **Build Command**: `npm run build` (detected automatically).
+4.  **Output Directory**: `dist` (detected automatically).
+5.  **Environment Variables**: Ensure you add the variables from Step 3 before deploying.
+
+### Deployment Process:
 1. Push your changes to GitHub.
 2. Connect your GitHub repository to Vercel.
-3. Vercel will automatically detect the Vite build and deploy.
+3. Configure the settings above in the Vercel "Configure Project" screen.
+4. Click **Deploy**.
 
 ---
 

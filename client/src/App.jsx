@@ -723,19 +723,29 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                     const newExpenses = formData.expenses.map(exp => {
                       if (exp.payment_type !== 'CompanyCard' || exp.receipt) return exp;
 
-                      // Matching Logic: Date ±3 days, Amount ±2%, Currency
+                      // Matching Logic: Date ±4 days, Amount ±3%, Currency (Case-Insensitive)
                       const expDate = new Date(exp.date);
                       const match = backlog.find(r => {
-                        if (!r.transaction_date || !r.gross_amount) return false;
-                        if (r.allocated_claim_id) return false; // Already taken
+                        if (r.allocated_claim_id) return false; // Already matched in this run
 
-                        const rDate = new Date(r.transaction_date);
+                        const rDate = new Date(r.transaction_date || r.created_at);
                         const diffDays = Math.abs((expDate - rDate) / (1000 * 60 * 60 * 24));
-                        const rAmt = parseFloat(r.amount_suggestion || r.gross_amount);
-                        const diffAmtPct = Math.abs((exp.amount - rAmt) / exp.amount);
-                        const currencyMatch = r.expense_currency === exp.currency;
 
-                        return diffDays <= 3 && diffAmtPct <= 0.02 && currencyMatch;
+                        const rAmt = parseFloat(r.amount_suggestion || r.gross_amount || 0);
+                        const diffAmtPct = exp.amount > 0 ? (Math.abs(exp.amount - rAmt) / exp.amount) : 0;
+
+                        // Robust currency check: Case-insensitive, fallback to entity currency if missing
+                        const rCur = (r.expense_currency || activeEntity.primary_currency || 'EUR').trim().toUpperCase();
+                        const eCur = (exp.currency || 'EUR').trim().toUpperCase();
+                        const currencyMatch = rCur === eCur;
+
+                        const isMatch = diffDays <= 4 && diffAmtPct <= 0.03 && currencyMatch;
+
+                        if (!isMatch && (diffDays <= 7 && diffAmtPct <= 0.05)) {
+                          console.log(`[AI Match Debug] Close miss for ${exp.vendor}: ${eCur} ${exp.amount} vs ${rCur} ${rAmt}. Days diff: ${diffDays.toFixed(1)}`);
+                        }
+
+                        return isMatch;
                       });
 
                       if (match) {
