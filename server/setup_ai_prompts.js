@@ -31,7 +31,7 @@ async function run() {
             },
             {
                 prompt_type: 'statement',
-                prompt_text: 'Extract all transaction lines from this bank statement into a structured list.\nCRITICAL RULES:\n1. For each transaction, identify the Date (YYYY-MM-DD), Merchant/Vendor, Amount, and Currency code.\n2. Assign a "suggestedType" from this list: [{{allowedCategories}}].\n3. If a line is not a transaction (e.g., summary, header, balance), ignore it.\n4. Output MUST be a single JSON object containing a "transactions" array.'
+                prompt_text: 'Extract all transaction lines from this bank statement into a structured list.\n\nCRITICAL DUAL-CURRENCY RULES:\n1. For each line, identify two sets of values:\n   - TRANSACTION (Original): The currency and amount of the actual purchase (e.g., if a meal was $50 in NYC, this is USD 50.00). Sometimed this is HIDDEN in the Merchant/Description field (e.g. "10.50 USD at Starbucks"). If NOT mentioned, assume it matches the Billing values.\n   - BILLING (Final): The currency and amount the bank actually charged your account (e.g., 46.20 EUR on a German card).\n2. Date: Use YYYY-MM-DD.\n3. Vendor: The merchant name or description.\n4. suggestedType: Pick from [{{allowedCategories}}].\n5. If a line is not a transaction, ignore it.\n6. Output MUST be a single JSON object with a "transactions" array.'
             }
         ];
 

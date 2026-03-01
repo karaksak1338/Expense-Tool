@@ -72,11 +72,13 @@ const statementSchema = {
                 properties: {
                     date: { type: SchemaType.STRING, description: 'Date of transaction (YYYY-MM-DD)' },
                     vendor: { type: SchemaType.STRING, description: 'Merchant or Description' },
-                    amount: { type: SchemaType.NUMBER, description: 'Transaction amount' },
-                    currency: { type: SchemaType.STRING, description: 'Currency code (e.g., EUR, USD)' },
+                    transaction_amount: { type: SchemaType.NUMBER, description: 'Original amount in the local currency (e.g. 100.00 if paid in USD)' },
+                    transaction_currency: { type: SchemaType.STRING, description: 'Original currency code (e.g. USD). Check description/merchant field if not a separate column.' },
+                    billing_amount: { type: SchemaType.NUMBER, description: 'Final amount billed to the account (e.g. 92.50 if account is EUR)' },
+                    billing_currency: { type: SchemaType.STRING, description: 'Final currency of the account (e.g. EUR)' },
                     suggestedType: { type: SchemaType.STRING, description: 'Suggested expense category' }
                 },
-                required: ['date', 'vendor', 'amount', 'currency']
+                required: ['date', 'vendor', 'transaction_amount', 'transaction_currency', 'billing_amount', 'billing_currency']
             }
         }
     },

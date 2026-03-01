@@ -831,8 +831,20 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                           <input type="number" value={isNaN(exp.amount) ? '' : exp.amount} onChange={e => updateExpense(exp.id, 'amount', e.target.value)} disabled={exp.immutable} style={{ flex: 1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }} title={exp.immutable ? "Locked by bank statement" : ""} />
                         </div>
                         {exp.payment_type === 'CompanyCard' ? (
-                          <div style={{ fontSize: '0.75rem', color: 'var(--primary)', marginTop: '4px', fontWeight: '500' }}>
-                            Authoritative Bank Statement Line
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: '500' }}>
+                              Authoritative Bank Statement Line
+                            </div>
+                            {exp.currency !== exp.billing_currency && exp.billing_amount && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div className="badge" style={{ background: '#fef3c7', color: '#92400e', fontSize: '0.7rem', border: '1px solid #fcd34d', padding: '2px 6px', width: 'fit-content' }}>
+                                  ⚠️ Fiscal Mismatch: Posted to {exp.billing_currency}
+                                </div>
+                                <div className="badge" style={{ background: '#f3f4f6', color: '#374151', fontSize: '0.7rem', border: '1px solid #d1d5db', padding: '2px 6px', width: 'fit-content' }}>
+                                  Financial Posting: {exp.billing_currency} {Number(exp.billing_amount).toFixed(2)}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           exp.currency && formData.currency && exp.currency !== formData.currency && (
@@ -1010,10 +1022,22 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
       if (!response.ok) throw new Error(await response.text());
 
       const result = await response.json();
+      const currentEntity = entities.find(el => el.id == user.entityId);
+      const entityPrimaryCurrency = currentEntity?.primary_currency || 'EUR';
+
       const extractedTransactions = (result.transactions || []).map(tx => ({
         ...tx,
         id: 'STMT-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
-        amount: parseFloat(tx.amount) || 0 // Final safety check
+        // Map AI fields to our internal transaction structure
+        date: tx.date,
+        vendor: tx.vendor,
+        // If the original transaction currency matches the company currency, use the billing amount for both to ensure 100% precision.
+        amount: (tx.transaction_currency === entityPrimaryCurrency) ? (parseFloat(tx.billing_amount) || 0) : (parseFloat(tx.transaction_amount) || 0),
+        currency: tx.transaction_currency || 'EUR',
+        billing_amount: parseFloat(tx.billing_amount) || 0,
+        // ENFORCE: Billing currency MUST match the company's primary currency
+        billing_currency: entityPrimaryCurrency,
+        suggestedType: tx.suggestedType || 'Other'
       }));
 
       setTransactions(extractedTransactions);
@@ -1063,15 +1087,16 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
       expenses: transactions.map((tx, idx) => ({
         id: Date.now() + idx,
         type: tx.suggestedType,
-        amount: tx.amount,
-        currency: tx.currency,
+        amount: tx.amount, // Transaction (for matching)
+        currency: tx.currency, // Transaction (for matching)
+        base_amount: tx.amount, // Explicitly set base for matching logic
+        billing_amount: tx.billing_amount, // Billing (for posting/accounting)
+        billing_currency: tx.billing_currency, // Billing (for posting/accounting)
         date: tx.date,
         description: tx.vendor,
         paymentMethod: 'COMPANY_CARD', // Maps to payment_type in DB
         payment_type: 'CompanyCard',
         external_reference: tx.id,
-        billing_amount: tx.amount,
-        billing_currency: tx.currency,
         immutable: true,
         allocation_status: 'UNMATCHED',
         receipt: null,
@@ -1139,7 +1164,14 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
                 <tr key={tx.id} style={{ borderBottom: '1px solid #f9f9f9', fontSize: '0.9rem' }}>
                   <td style={{ padding: '0.8rem 0' }}>{tx.date}</td>
                   <td style={{ fontWeight: '500' }}>{tx.vendor}</td>
-                  <td>{tx.currency} {tx.amount.toFixed(2)}</td>
+                  <td>
+                    <div style={{ fontWeight: '500' }}>{tx.currency} {tx.amount.toFixed(2)}</div>
+                    {tx.currency !== tx.billing_currency && (
+                      <div style={{ fontSize: '0.7rem', color: '#666' }}>
+                        (Billed: {tx.billing_currency} {tx.billing_amount.toFixed(2)})
+                      </div>
+                    )}
+                  </td>
                   <td>
                     <span className="badge" style={{ background: '#e3f2fd', color: '#1976d2', border: 'none' }}>
                       🪄 {tx.suggestedType}
@@ -2244,7 +2276,15 @@ function App() {
             backlog_id: e.backlogId || e.backlog_id,
             clients: e.clients,
             attendees: e.attendees ? Number(e.attendees) : null,
-            purpose: e.purpose
+            purpose: e.purpose,
+
+            // Persistence for statement-imported fields
+            billing_amount: Number(e.billing_amount) || Number(e.amount) || 0,
+            billing_currency: e.payment_type === 'CompanyCard'
+              ? (e.billing_currency || entities.find(el => el.id == (claimBase.entity_id || claimBase.entityId))?.primary_currency || 'EUR')
+              : (e.billing_currency || e.currency),
+            immutable: !!e.immutable,
+            external_reference: e.external_reference || null
           };
         });
 
