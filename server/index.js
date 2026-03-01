@@ -11,14 +11,18 @@ app.use(cors());
 app.use(express.json());
 
 process.on('uncaughtException', (err) => {
-    console.error('UNCAUGHT EXCEPTION:', err);
+    console.error('CRITICAL: UNCAUGHT EXCEPTION:', err.stack || err);
     process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('UNHANDLED REJECTION at:', promise, 'reason:', reason);
+    console.error('CRITICAL: UNHANDLED REJECTION at:', promise, 'reason:', reason.stack || reason);
     process.exit(1);
 });
+
+console.log('Starting Gemini Proxy with Environment Checks...');
+console.log('GEMINI_API_KEY present:', !!process.env.GEMINI_API_KEY);
+console.log('SUPABASE_URL present:', !!process.env.VITE_SUPABASE_URL);
 
 // Set up Multer for memory storage (no writing to disk needed for proxy)
 const upload = multer({ storage: multer.memoryStorage() });
@@ -56,6 +60,27 @@ const extractionSchema = {
         }
     },
     required: ['expense_currency', 'gross_amount', 'transaction_date', 'vendor_name', 'expense_type']
+};
+
+const statementSchema = {
+    type: SchemaType.OBJECT,
+    properties: {
+        transactions: {
+            type: SchemaType.ARRAY,
+            items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    date: { type: SchemaType.STRING, description: 'Date of transaction (YYYY-MM-DD)' },
+                    vendor: { type: SchemaType.STRING, description: 'Merchant or Description' },
+                    amount: { type: SchemaType.NUMBER, description: 'Transaction amount' },
+                    currency: { type: SchemaType.STRING, description: 'Currency code (e.g., EUR, USD)' },
+                    suggestedType: { type: SchemaType.STRING, description: 'Suggested expense category' }
+                },
+                required: ['date', 'vendor', 'amount', 'currency']
+            }
+        }
+    },
+    required: ['transactions']
 };
 
 const { createClient } = require('@supabase/supabase-js');
@@ -129,6 +154,67 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         console.error("Gemini Extraction Error:", error);
         res.status(500).json({
             error: 'Failed to extract receipt data',
+            details: error.message
+        });
+    }
+});
+
+app.post('/api/extract-statement', upload.single('statement'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No statement file provided' });
+        }
+
+        const allowedCategories = req.body.allowedCategories || 'Other';
+
+        let promptTemplate = `Extract all transaction lines from this bank statement into a structured list.
+        CRITICAL RULES:
+        1. For each transaction, identify the Date (YYYY-MM-DD), Merchant/Vendor, Amount, and Currency code.
+        2. Assign a 'suggestedType' from this list: [{{allowedCategories}}].
+        3. If a line is not a transaction (e.g., summary, header, balance), ignore it.
+        4. Output MUST be a single JSON object containing a 'transactions' array.`;
+
+        try {
+            const { data: prompts } = await supabase.from('ai_prompts').select('prompt_text').eq('prompt_type', 'statement').single();
+            if (prompts && prompts.prompt_text) {
+                promptTemplate = prompts.prompt_text;
+            }
+        } catch (err) {
+            console.warn("Could not fetch statement prompts from DB", err.message);
+        }
+
+        const finalPrompt = promptTemplate.replace('{{allowedCategories}}', allowedCategories);
+
+        const filePart = {
+            inlineData: {
+                data: req.file.buffer.toString('base64'),
+                mimeType: req.file.mimetype
+            }
+        };
+
+        const model = genAI.getGenerativeModel({
+            model: 'gemini-1.5-flash',
+            generationConfig: {
+                responseMimeType: 'application/json',
+                responseSchema: statementSchema,
+                temperature: 0.1
+            }
+        });
+
+        const result = await model.generateContent([finalPrompt, filePart]);
+        const extractedText = result.response.text();
+        const parsed = JSON.parse(extractedText);
+
+        res.json({
+            raw_json: extractedText,
+            transactions: parsed.transactions || [],
+            model_version: 'gemini-1.5-flash'
+        });
+
+    } catch (error) {
+        console.error("Statement Extraction Error:", error);
+        res.status(500).json({
+            error: 'Failed to extract statement data',
             details: error.message
         });
     }

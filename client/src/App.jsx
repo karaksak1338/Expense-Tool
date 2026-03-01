@@ -828,7 +828,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                         <label>Currency & Amount *</label>
                         <div style={{ display: 'flex' }}>
                           <input type="text" value={exp.currency || ''} onChange={e => updateExpense(exp.id, 'currency', e.target.value.toUpperCase())} disabled={exp.immutable} placeholder="EUR" style={{ width: '80px', borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', textAlign: 'center', background: exp.immutable ? '#f3f4f6' : '#f9fafb', fontWeight: 'bold' }} title={exp.immutable ? "Locked by bank statement" : ""} />
-                          <input type="number" value={exp.amount} onChange={e => updateExpense(exp.id, 'amount', e.target.value)} disabled={exp.immutable} style={{ flex: 1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }} title={exp.immutable ? "Locked by bank statement" : ""} />
+                          <input type="number" value={isNaN(exp.amount) ? '' : exp.amount} onChange={e => updateExpense(exp.id, 'amount', e.target.value)} disabled={exp.immutable} style={{ flex: 1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }} title={exp.immutable ? "Locked by bank statement" : ""} />
                         </div>
                         {exp.payment_type === 'CompanyCard' ? (
                           <div style={{ fontSize: '0.75rem', color: 'var(--primary)', marginTop: '4px', fontWeight: '500' }}>
@@ -980,40 +980,50 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
   );
 };
 
-const ImportPortal = ({ entities, user, onImportComplete }) => {
+const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
   const [step, setStep] = useState('upload');
   const [transactions, setTransactions] = useState([]);
   const [statementFile, setStatementFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const handleFileUpload = (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     setStatementFile(file);
+    setIsUploading(true);
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target.result;
-      const lines = text.split('\n').filter(l => l.trim().length > 0);
+    try {
+      const formData = new FormData();
+      formData.append('statement', file);
 
-      // Simple CSV Parser (Skip header, split by comma)
-      const parsed = lines.slice(1).map(line => {
-        const parts = line.split(',').map(p => p.trim());
-        if (parts.length < 3) return null;
-        return {
-          id: 'STMT-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
-          date: parts[0],
-          vendor: parts[1],
-          amount: parseFloat(parts[2]),
-          currency: parts[3] || 'EUR',
-          suggestedType: parts[4] || 'Other'
-        };
-      }).filter(Boolean);
+      // Get entity categories to help the AI map types
+      const userEnt = entities.find(el => el.id == user.entityId);
+      // We pass the labels of all expense types to help Gemini categorize
+      const allowedCategories = (expenseTypes || []).map(t => t.label).join(', ');
+      formData.append('allowedCategories', allowedCategories);
 
-      setTransactions(parsed);
+      const response = await fetch('http://localhost:3001/api/extract-statement', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) throw new Error(await response.text());
+
+      const result = await response.json();
+      const extractedTransactions = (result.transactions || []).map(tx => ({
+        ...tx,
+        id: 'STMT-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+        amount: parseFloat(tx.amount) || 0 // Final safety check
+      }));
+
+      setTransactions(extractedTransactions);
       setStep('staging');
-    };
-    reader.readAsText(file);
+    } catch (err) {
+      console.error('Statement extraction failed:', err);
+      alert('Failed to extract data from statement. Please ensure it is a clear PDF, Image, or CSV.');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const createDraftClaim = async () => {
@@ -1076,7 +1086,7 @@ const ImportPortal = ({ entities, user, onImportComplete }) => {
     <div className="view">
       <div className="header"><h2>Bank Statement Import</h2></div>
       <div style={{ display: 'none' }}>
-        <input id="statement-upload" type="file" accept=".csv" onChange={handleFileUpload} />
+        <input id="statement-upload" type="file" accept=".csv,.pdf,.png,.jpg,.jpeg,.xlsx" onChange={handleFileUpload} />
       </div>
 
       {step === 'upload' ? (
@@ -2652,7 +2662,7 @@ function App() {
           />
         )}
 
-        {view === 'imports' && <ImportPortal entities={entities} user={user} onImportComplete={(draft) => { setImportedClaim(draft); setView('new-claim'); }} />}
+        {view === 'imports' && <ImportPortal entities={entities} user={user} expenseTypes={expenseTypes} onImportComplete={(draft) => { setImportedClaim(draft); setView('new-claim'); }} />}
 
         {view === 'finance' && !selectedClaim && (
           <div className="view">
