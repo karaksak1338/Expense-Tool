@@ -712,7 +712,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                       .select('*')
                       .eq('user_id', user.id)
                       .eq('entity_id', selectedEntityId)
-                      .eq('receipt_status', 'uploaded');
+                      .eq('status', 'UNALLOCATED');
 
                     if (!backlog || backlog.length === 0) {
                       alert('No unallocated receipts found in your library for this entity.');
