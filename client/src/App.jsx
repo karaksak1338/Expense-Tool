@@ -723,30 +723,39 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                     const newExpenses = formData.expenses.map(exp => {
                       if (exp.payment_type !== 'CompanyCard' || exp.receipt) return exp;
 
-                      // Matching Logic: Date ±4 days, Amount ±3%, Currency (Case-Insensitive)
+                      // Matching Priority: 1. Amount (Primary), 2. Date (Secondary), 3. Currency (Strict)
                       const expDate = new Date(exp.date);
-                      const match = backlog.find(r => {
-                        if (r.allocated_claim_id) return false; // Already matched in this run
-
-                        const rDate = new Date(r.transaction_date || r.created_at);
-                        const diffDays = Math.abs((expDate - rDate) / (1000 * 60 * 60 * 24));
+                      const matches = backlog.filter(r => {
+                        if (r.allocated_claim_id) return false;
 
                         const rAmt = parseFloat(r.amount_suggestion || r.gross_amount || 0);
                         const diffAmtPct = exp.amount > 0 ? (Math.abs(exp.amount - rAmt) / exp.amount) : 0;
 
-                        // Robust currency check: Case-insensitive, fallback to entity currency if missing
                         const rCur = (r.expense_currency || activeEntity.primary_currency || 'EUR').trim().toUpperCase();
                         const eCur = (exp.currency || 'EUR').trim().toUpperCase();
                         const currencyMatch = rCur === eCur;
 
-                        const isMatch = diffDays <= 4 && diffAmtPct <= 0.03 && currencyMatch;
-
-                        if (!isMatch && (diffDays <= 7 && diffAmtPct <= 0.05)) {
-                          console.log(`[AI Match Debug] Close miss for ${exp.vendor}: ${eCur} ${exp.amount} vs ${rCur} ${rAmt}. Days diff: ${diffDays.toFixed(1)}`);
-                        }
-
-                        return isMatch;
+                        // Phase 1: Verify Amount & Currency (The anchor for matching)
+                        return currencyMatch && diffAmtPct <= 0.03;
                       });
+
+                      // Phase 2: From the amount matches, pick the one closest in date
+                      let match = null;
+                      if (matches.length === 1) {
+                        match = matches[0];
+                      } else if (matches.length > 1) {
+                        // Tie-breaker: Closest date within 7 days
+                        match = matches.reduce((best, current) => {
+                          const bestDate = new Date(best.transaction_date || best.created_at);
+                          const currentDate = new Date(current.transaction_date || current.created_at);
+                          const bestDiff = Math.abs(expDate - bestDate);
+                          const currentDiff = Math.abs(expDate - currentDate);
+                          return currentDiff < bestDiff ? current : best;
+                        });
+
+                        const finalDiffDays = Math.abs((expDate - new Date(match.transaction_date || match.created_at)) / (1000 * 60 * 60 * 24));
+                        if (finalDiffDays > 7) match = null; // Too far even if amount matches
+                      }
 
                       if (match) {
                         matchedCount++;
@@ -2381,6 +2390,7 @@ function App() {
       const newReceipt = {
         id: baseReceiptId,
         user_id: user.id,
+        entity_id: user.entityId,
         file_name: file.name,
         status: 'UNALLOCATED',
         receipt_status: 'processing',
