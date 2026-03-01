@@ -2045,6 +2045,8 @@ function App() {
           approvalStatus: c.approval_status,
           expenses: (c.expense_items || []).map(e => ({
             ...e,
+            date: e.exchange_rate_date || e.date,
+            payment_type: e.payment_type || (e.payment === 'COMPANY_CREDITCARD' ? 'CompanyCard' : 'CashReimbursement'),
             backlogId: e.backlog_id
           }))
         })));
@@ -2287,7 +2289,8 @@ function App() {
             exchange_rate_date: e.date || null,
             exchange_rate_source: rate !== 1 ? 'system' : null,
 
-            payment: e.payment,
+            payment_type: e.payment_type || (e.payment === 'COMPANY_CREDITCARD' ? 'CompanyCard' : 'CashReimbursement'),
+            payment: e.payment || (e.payment_type === 'CompanyCard' ? 'COMPANY_CREDITCARD' : 'REIMBURSABLE'),
             receipt: e.receipt,
             project: e.project,
             department: e.department,
