@@ -85,7 +85,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         };
 
         const model = genAI.getGenerativeModel({
-            model: 'gemini-2.0-flash',
+            model: 'gemini-1.5-flash',
             generationConfig: {
                 responseMimeType: 'application/json',
                 responseSchema: extractionSchema,
@@ -106,7 +106,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         res.json({
             raw_json: extractedText,
             parsed: parsedData,
-            model_version: 'gemini-2.0-flash',
+            model_version: 'gemini-1.5-flash',
             file_hash: fileHash
         });
 
