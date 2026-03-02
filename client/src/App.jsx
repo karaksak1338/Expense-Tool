@@ -32,45 +32,127 @@ const APPROVAL_STATUS = { NA: 'N/A', PENDING: 'PENDING APPROVAL', REJECTED: 'REJ
 
 // --- COMPONENTS ---
 
-const LoginPage = ({ users, onLogin }) => {
-  const [search, setSearch] = useState('');
-  const filteredUsers = (users || []).filter(u =>
-    (u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.roles.some(r => r.toLowerCase().includes(search.toLowerCase()))) &&
-    u.is_active !== false
-  );
+const LoginPage = ({ onLogin }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      // onAuthStateChange handles user state sync
+    } catch (err) {
+      setError(err.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg-main)', padding: '2rem' }}>
-      <div className="card" style={{ width: '700px', textAlign: 'center' }}>
-        <h1>DCBI Expense Tool</h1>
-        <p style={{ margin: '1rem 0 0.5rem', color: 'var(--text-secondary)' }}>Select Profile for Technical Audit</p>
+      <div className="card" style={{ width: '400px', textAlign: 'center', padding: '2.5rem' }}>
+        <h1 style={{ marginBottom: '0.5rem' }}>DCBI Expense Tool</h1>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>Secure Sign In</p>
 
-        <div style={{ marginBottom: '1.5rem' }}>
-          <input
-            type="text"
-            placeholder="Search users or roles..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', border: '1px solid #ddd' }}
-          />
-        </div>
+        {error && <div style={{ background: '#fee2e2', color: '#b91c1c', padding: '0.75rem', borderRadius: '6px', marginBottom: '1.5rem', fontSize: '0.9rem' }}>{error}</div>}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.5rem', maxHeight: '50vh', overflowY: 'auto', padding: '0.5rem' }}>
-          {filteredUsers.map(u => (
-            <button key={u.id} className="btn btn-outline" style={{ display: 'block', width: '100%', padding: '1rem', textAlign: 'left' }} onClick={() => onLogin(u)}>
-              <div style={{ fontWeight: 'bold' }}>{u.name}</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--primary)', marginTop: '4px' }}>{u.roles.join(' + ')}</div>
-              <div style={{ fontSize: '0.65rem', color: '#888' }}>{u.email}</div>
-            </button>
-          ))}
-          {filteredUsers.length === 0 && <p style={{ gridColumn: 'span 2', padding: '2rem', color: '#999' }}>No users found matching "{search}"</p>}
-        </div>
-
-        <div style={{ borderTop: '1px solid #eee', paddingTop: '1.5rem' }}>
-          <button className="btn btn-primary" style={{ width: '100%', background: '#0078d4', borderColor: '#0078d4' }} onClick={() => alert('Redirecting to Azure AD Tenant: DCBI_GLOBAL_MOCK... (SSO Simulation)')}>
-            🛡️ Login with Corporate SSO (Azure AD)
+        <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
+          <div className="form-group">
+            <label>Email Address</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@dcbi.com" style={{ padding: '0.8rem' }} />
+          </div>
+          <div className="form-group" style={{ marginTop: '1rem' }}>
+            <label>Password</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" style={{ padding: '0.8rem' }} />
+          </div>
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '2rem', padding: '1rem' }} disabled={loading}>
+            {loading ? 'Authenticating...' : 'Sign In'}
           </button>
+        </form>
+
+        <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid #eee' }}>
+          <button className="btn btn-outline" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={() => alert('Corporate SSO will be available soon.')}>
+            🛡️ SSO Login
+          </button>
+        </div>
+        <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: '#94a3b8' }}>Default password for all internal users: <strong>DCBIExpense</strong></p>
+      </div>
+    </div>
+  );
+};
+
+const SettingsView = ({ user, onBack }) => {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) return setMessage({ type: 'error', text: 'Passwords do not match' });
+    if (newPassword.length < 6) return setMessage({ type: 'error', text: 'Password must be at least 6 characters' });
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setMessage({ type: 'success', text: 'Password updated successfully!' });
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="view">
+      <div className="header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <button className="btn btn-outline" onClick={onBack}>← Back</button>
+          <h2>User Settings</h2>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem', marginTop: '2rem' }}>
+        <div className="card">
+          <h3>Profile Information</h3>
+          <div style={{ marginTop: '1.5rem' }}>
+            <p><strong>Name:</strong> {user.name}</p>
+            <p><strong>Email:</strong> {user.email}</p>
+            <p><strong>Primary Role:</strong> {user.roles?.join(', ')}</p>
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>Security</h3>
+          <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1.5rem' }}>Update your account password below.</p>
+
+          {message && (
+            <div style={{ padding: '0.75rem', borderRadius: '6px', marginBottom: '1.5rem', fontSize: '0.85rem', background: message.type === 'success' ? '#dcfce7' : '#fee2e2', color: message.type === 'success' ? '#15803d' : '#b91c1c' }}>
+              {message.text}
+            </div>
+          )}
+
+          <form onSubmit={handleUpdatePassword}>
+            <div className="form-group">
+              <label>New Password</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} required />
+            </div>
+            <div className="form-group" style={{ marginTop: '1rem' }}>
+              <label>Confirm New Password</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required />
+            </div>
+            <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '1.5rem' }} disabled={loading}>
+              {loading ? 'Updating...' : 'Change Password'}
+            </button>
+          </form>
         </div>
       </div>
     </div>
@@ -97,6 +179,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         {(hasRole('STAFF') || (hasRole('ACCOUNTANT') && !hasRole('ADMIN'))) && (
           <div className={`nav-item ${currentView === 'receipts-backlog' ? 'active' : ''}`} onClick={() => onViewChange('receipts-backlog')}>📚 Receipts Library</div>
         )}
+        <div className={`nav-item ${currentView === 'settings' ? 'active' : ''}`} onClick={() => onViewChange('settings')}>⚙️ Settings</div>
         {hasRole('STAFF') && (
           <>
             <div className={`nav-item ${currentView === 'my-claims' ? 'active' : ''}`} onClick={() => onViewChange('my-claims')}>📄 My Expenses</div>
@@ -114,7 +197,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0008</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0009</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -2045,11 +2128,42 @@ function App() {
   }, [users, user?.id]);
 
   useEffect(() => {
+    // 1. Initial Session Check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        setUser(null);
+        return;
+      }
+      localStorage.setItem('expenseApp_user', JSON.stringify({ email: session.user.email, id: session.user.id }));
+    });
+
+    // 2. Auth State Listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        // Sync user state from our public 'users' table
+        const { data: appUser } = await supabase.from('users').select('*').eq('email', session.user.email).single();
+        if (appUser) {
+          const fresh = { ...appUser, entityId: appUser.entity_id, approverId: appUser.approver_id, assignedEntities: appUser.assigned_entities || [] };
+          setUser(fresh);
+          localStorage.setItem('expenseApp_user', JSON.stringify(fresh));
+        } else {
+          // Fallback if user is in Auth but not in public table yet
+          const temp = { email: session.user.email, name: session.user.email.split('@')[0], roles: ['STAFF'] };
+          setUser(temp);
+        }
+      } else {
+        setUser(null);
+        localStorage.removeItem('expenseApp_user');
+      }
+    });
+
     // Ensure all paths resolve to root for this SPA
     if (window.location.pathname !== '/' && window.location.pathname !== '/index.html') {
       window.history.replaceState({}, '', '/');
     }
     fetchGlobalData();
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -2760,7 +2874,8 @@ function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setUser(null);
     setClaims([]);
     setReceipts([]);
@@ -2769,7 +2884,7 @@ function App() {
     setPreviewReceipt(null);
   };
 
-  if (!user) return <LoginPage users={users.length > 0 ? users : INITIAL_USERS} onLogin={setUser} />;
+  if (!user) return <LoginPage onLogin={setUser} />;
 
   const userEntity = entities.find(e => e.id == user.entityId);
 
