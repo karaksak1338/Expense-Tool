@@ -114,7 +114,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0002</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0003</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -1074,7 +1074,7 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete, setGloba
       const allowedCategories = (expenseTypes || []).map(t => t.label).join(', ');
       formData.append('allowedCategories', allowedCategories);
 
-      const proxyBaseUrl = import.meta.env.VITE_GEMINI_PROXY_URL || 'http://localhost:3001';
+      const proxyBaseUrl = import.meta.env.VITE_GEMINI_PROXY_URL || '';
       const response = await fetch(`${proxyBaseUrl}/api/extract-statement`, {
         method: 'POST',
         body: formData
@@ -2589,7 +2589,7 @@ function App() {
       let fetchFailed = false;
 
       try {
-        const proxyBaseUrl = import.meta.env.VITE_GEMINI_PROXY_URL || 'http://localhost:3001';
+        const proxyBaseUrl = import.meta.env.VITE_GEMINI_PROXY_URL || '';
         const response = await fetch(`${proxyBaseUrl}/api/extract`, {
           method: 'POST',
           body: formData
