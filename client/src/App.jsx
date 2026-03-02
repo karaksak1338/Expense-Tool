@@ -35,6 +35,7 @@ const APPROVAL_STATUS = { NA: 'N/A', PENDING: 'PENDING APPROVAL', REJECTED: 'REJ
 const LoginPage = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -43,11 +44,25 @@ const LoginPage = ({ onLogin }) => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      // onAuthStateChange handles user state sync
+      if (isRegistering) {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: email.split('@')[0]
+            }
+          }
+        });
+        if (error) throw error;
+        alert('Registration successful! If email confirmation is enabled, please check your inbox. Otherwise, you can now sign in.');
+        setIsRegistering(false);
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
     } catch (err) {
-      setError(err.message || 'Login failed');
+      setError(err.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
@@ -57,7 +72,7 @@ const LoginPage = ({ onLogin }) => {
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg-main)', padding: '2rem' }}>
       <div className="card" style={{ width: '400px', textAlign: 'center', padding: '2.5rem' }}>
         <h1 style={{ marginBottom: '0.5rem' }}>DCBI Expense Tool</h1>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>Secure Sign In</p>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>{isRegistering ? 'Create Your Account' : 'Secure Sign In'}</p>
 
         {error && <div style={{ background: '#fee2e2', color: '#b91c1c', padding: '0.75rem', borderRadius: '6px', marginBottom: '1.5rem', fontSize: '0.9rem' }}>{error}</div>}
 
@@ -71,16 +86,23 @@ const LoginPage = ({ onLogin }) => {
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" style={{ padding: '0.8rem' }} />
           </div>
           <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '2rem', padding: '1rem' }} disabled={loading}>
-            {loading ? 'Authenticating...' : 'Sign In'}
+            {loading ? 'Processing...' : (isRegistering ? 'Register' : 'Sign In')}
           </button>
         </form>
+
+        <p style={{ marginTop: '1.5rem', fontSize: '0.9rem' }}>
+          {isRegistering ? 'Already have an account?' : 'First time here?'}
+          <button className="btn-link" style={{ marginLeft: '5px', color: 'var(--primary)', fontWeight: 'bold', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setIsRegistering(!isRegistering)}>
+            {isRegistering ? 'Sign In instead' : 'Register now'}
+          </button>
+        </p>
 
         <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid #eee' }}>
           <button className="btn btn-outline" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={() => alert('Corporate SSO will be available soon.')}>
             🛡️ SSO Login
           </button>
         </div>
-        <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: '#94a3b8' }}>Default password for all internal users: <strong>DCBIExpense</strong></p>
+        <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: '#94a3b8' }}>For initial registration, use the default password: <strong>DCBIExpense</strong></p>
       </div>
     </div>
   );
@@ -197,7 +219,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0009</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0010</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
