@@ -94,7 +94,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
       </div>
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         <div className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => onViewChange('dashboard')}>🏠 Dashboard</div>
-        {(hasRole('STAFF') || hasRole('ADMIN') || hasRole('ACCOUNTANT')) && (
+        {(hasRole('STAFF') || (hasRole('ACCOUNTANT') && !hasRole('ADMIN'))) && (
           <div className={`nav-item ${currentView === 'receipts-backlog' ? 'active' : ''}`} onClick={() => onViewChange('receipts-backlog')}>📚 Receipts Library</div>
         )}
         {hasRole('STAFF') && (
@@ -186,7 +186,7 @@ const ClaimReport = ({ claim, user, entity }) => (
   </div>
 );
 
-const DetailView = ({ claim, owner, approver, currentUser, entity, onBack, onStatusUpdate, onEdit, onSave, mode, expenseTypes, onPreview }) => {
+const DetailView = ({ claim, owner, approver, accountants, currentUser, entity, onBack, onStatusUpdate, onEdit, onSave, mode, expenseTypes, onPreview }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [syncing, setSyncing] = useState(false);
   const [history, setHistory] = useState([]);
@@ -272,10 +272,10 @@ const DetailView = ({ claim, owner, approver, currentUser, entity, onBack, onSta
           )}
           {mode === 'finance' && (
             <>
-              {(claim.claimStatus === CLAIM_STATUS.SUBMITTED || claim.approvalStatus === APPROVAL_STATUS.REJECTED) && (
+              {(claim.claimStatus === CLAIM_STATUS.SUBMITTED || claim.approvalStatus === APPROVAL_STATUS.REJECTED) && !claim.isViewOnly && (
                 <button className="btn btn-warning" onClick={() => wrappedStatusUpdate(claim.id, { claimStatus: CLAIM_STATUS.ACCRUED })}>Accrue (Month-End)</button>
               )}
-              {claim.approvalStatus === APPROVAL_STATUS.APPROVED && claim.claimStatus !== CLAIM_STATUS.CLOSED && (
+              {claim.approvalStatus === APPROVAL_STATUS.APPROVED && claim.claimStatus !== CLAIM_STATUS.CLOSED && !claim.isViewOnly && (
                 <button className="btn btn-primary" disabled={syncing} onClick={handleSync}>
                   {syncing ? 'Syncing to D365FO...' : 'Sync & Close'}
                 </button>
@@ -311,6 +311,11 @@ const DetailView = ({ claim, owner, approver, currentUser, entity, onBack, onSta
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
             {entity && <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#f0f4f8', padding: '4px 8px', borderRadius: '4px', border: '1px solid #d9e2ec' }}>Entity: <strong>{entity.code} - {entity.name}</strong></span>}
             {approver && <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#fff', padding: '4px 8px', borderRadius: '4px', border: '1px solid #ddd' }}>Approver: <strong>{approver.name}</strong></span>}
+            {accountants?.length > 0 && (
+              <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#e0f2fe', padding: '4px 8px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+                Accountant: <strong>{accountants.map(a => a.name).join(', ')}</strong>
+              </span>
+            )}
           </div>
         </div>
 
@@ -972,7 +977,11 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                 );
               })}
               <div style={{ marginTop: '1rem', textAlign: 'center', marginBottom: '2rem' }}>
-                <button className="btn btn-outline" style={{ borderStyle: 'dashed', width: '100%', padding: '1rem', background: '#f8fafc' }} onClick={() => setFormData({ ...formData, expenses: [...formData.expenses, { id: Date.now(), type: '', amount: 0, currency: selectedCurrency, payment: 'COMPANY_CREDITCARD', receipt: null, project: '', department: '' }] })}>
+                <button className="btn btn-outline" style={{ borderStyle: 'dashed', width: '100%', padding: '1rem', background: '#f8fafc' }} onClick={() => {
+                  const defProject = projects.find(p => p.id === activeEntity.default_project_id)?.name || '';
+                  const defDept = departments.find(d => d.id === activeEntity.default_department_id)?.name || '';
+                  setFormData({ ...formData, expenses: [...formData.expenses, { id: Date.now(), type: '', amount: 0, currency: selectedCurrency, payment: 'REIMBURSABLE', receipt: null, project: defProject, department: defDept }] });
+                }}>
                   + Add Expense Position
                 </button>
               </div>
@@ -1031,6 +1040,15 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
     if (!file) return;
     setStatementFile(file);
     setIsUploading(true);
+
+    // Robustness: Cache the statement locally for instant preview, same as Receipts Library
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      localStorage.setItem(`receipt_blob_${file.name}`, ev.target.result);
+      // We also store it under the eventual Supabase path once we have the user ID, 
+      // but since we don't have the final path yet, we'll rely on the filename first.
+    };
+    reader.readAsDataURL(file);
 
     try {
       const formData = new FormData();
@@ -1092,7 +1110,13 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
           .upload(filePath, statementFile);
 
         if (uploadError) throw uploadError;
-        attachmentPath = fileName; // Store just the name for our preview logic
+        attachmentPath = filePath;
+
+        // Final robustness: Link the cached local blob to the final storage path 
+        const localBlob = localStorage.getItem(`receipt_blob_${statementFile.name}`);
+        if (localBlob) {
+          localStorage.setItem(`receipt_blob_${filePath}`, localBlob);
+        }
       } catch (err) {
         console.error('Statement upload error:', err);
         alert('Failed to upload original statement. Draft will be created without attachment.');
@@ -1383,6 +1407,18 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
   const [editingItem, setEditingItem] = useState(null);
   const [search, setSearch] = useState('');
 
+  const getAccountantsForEntity = (entityId) => {
+    return users.filter(u =>
+      u.roles?.includes('ACCOUNTANT') &&
+      (String(u.entityId) === String(entityId) || (Array.isArray(u.assignedEntities) && u.assignedEntities.some(ae => String(ae) === String(entityId))))
+    );
+  };
+
+  const isRestricted = user.roles.includes('ACCOUNTANT') && !user.roles.includes('ADMIN');
+  const assignedEntities = isRestricted
+    ? entities.filter(e => String(e.id) === String(user.entityId) || (user.assignedEntities || []).some(ae => String(ae) === String(e.id)))
+    : entities;
+
   const renderRoles = (userRoles) => {
     const roles = Array.isArray(userRoles) ? userRoles : [userRoles];
     return roles.join(', ');
@@ -1415,7 +1451,7 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
         <button className={`btn ${activeTab === 'entities' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('entities')}>Legal Entities</button>
-        <button className={`btn ${activeTab === 'users' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('users')}>User Matrix</button>
+        {!isRestricted && <button className={`btn ${activeTab === 'users' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('users')}>User Matrix</button>}
         <button className={`btn ${activeTab === 'projects' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('projects')}>Projects</button>
         <button className={`btn ${activeTab === 'departments' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('departments')}>Departments</button>
         <button className={`btn ${activeTab === 'expenseTypes' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('expenseTypes')}>Expense Categories</button>
@@ -1451,7 +1487,7 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '2px solid #eee' }}>
-              {activeTab === 'entities' && <><th>Logo</th><th>Name</th><th>Code</th><th>Location</th></>}
+              {activeTab === 'entities' && <><th>Logo</th><th>Name</th><th>Code</th><th>Location</th><th>Accountants</th></>}
               {activeTab === 'users' && <><th>Name</th><th>Email</th><th>Roles</th><th>Entity</th></>}
               {activeTab === 'projects' && <><th>Project Name</th><th>Code</th></>}
               {activeTab === 'departments' && <><th>Department Name</th><th>Code</th></>}
@@ -1462,12 +1498,27 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
             </tr>
           </thead>
           <tbody>
-            {activeTab === 'entities' && filtered(entities).map(e => (
+            {activeTab === 'entities' && filtered(assignedEntities).map(e => (
               <tr key={e.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
                 <td style={{ fontSize: '1.5rem' }}>{e.logo || '🏢'}</td>
                 <td><strong>{e.name}</strong></td>
                 <td><code>{e.code}</code></td>
                 <td><small>{e.address}, {e.country}</small></td>
+                <td>
+                  {(() => {
+                    const accs = getAccountantsForEntity(e.id);
+                    if (accs.length === 0) return <span style={{ color: '#9ca3af', fontSize: '0.8rem', fontStyle: 'italic' }}>No Accountant Assigned</span>;
+                    return (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {accs.map(a => (
+                          <span key={a.id} className="badge" style={{ background: '#e0f2fe', color: '#0369a1', fontSize: '0.7rem' }}>
+                            👤 {a.name}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </td>
                 <td><button className="btn btn-outline" onClick={() => setEditingItem({ ...e, type: 'entity' })}>Edit</button></td>
               </tr>
             ))}
@@ -1562,9 +1613,35 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
                     <div className="form-group"><label>Country</label><input value={editingItem.country || ''} onChange={e => setEditingItem({ ...editingItem, country: e.target.value })} /></div>
                     <div className="form-group"><label>Country ISO3</label><input value={editingItem.countryIso3 || ''} onChange={e => setEditingItem({ ...editingItem, countryIso3: e.target.value })} /></div>
                   </div>
+                  <div className="form-group" style={{ background: '#f0f9ff', padding: '0.75rem', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+                    <label style={{ fontWeight: 'bold', color: '#0369a1', fontSize: '0.85rem' }}>Assigned Accountants</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.4rem' }}>
+                      {(() => {
+                        const accs = users.filter(u => u.roles?.includes('ACCOUNTANT') && (String(u.entityId) === String(editingItem.id) || (Array.isArray(u.assignedEntities) && u.assignedEntities.some(ae => String(ae) === String(editingItem.id)))));
+                        if (accs.length === 0) return <span style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic' }}>No accountants assigned to this entity.</span>;
+                        return accs.map(a => <span key={a.id} className="badge" style={{ background: '#fff', color: '#0369a1', border: '1px solid #bae6fd' }}>👤 {a.name}</span>);
+                      })()}
+                    </div>
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                     <div className="form-group"><label>Primary Currency (ISO)</label><input value={editingItem.primary_currency || ''} onChange={e => setEditingItem({ ...editingItem, primary_currency: e.target.value.toUpperCase() })} placeholder="e.g. EUR" /></div>
                     <div className="form-group"><label>Secondary Currency (ISO)</label><input value={editingItem.secondary_currency || ''} onChange={e => setEditingItem({ ...editingItem, secondary_currency: e.target.value.toUpperCase() })} placeholder="e.g. USD" /></div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                    <div className="form-group">
+                      <label>Default Project</label>
+                      <select value={editingItem.default_project_id || ''} onChange={e => setEditingItem({ ...editingItem, default_project_id: e.target.value })}>
+                        <option value="">None</option>
+                        {projects.map(p => <option key={p.id} value={p.id}>{p.code} - {p.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Default Department</label>
+                      <select value={editingItem.default_department_id || ''} onChange={e => setEditingItem({ ...editingItem, default_department_id: e.target.value })}>
+                        <option value="">None</option>
+                        {departments.map(d => <option key={d.id} value={d.id}>{d.code} - {d.name}</option>)}
+                      </select>
+                    </div>
                   </div>
                   <div className="form-group">
                     <label style={{ fontWeight: 'bold' }}>Mandatory Fields</label>
@@ -1875,6 +1952,13 @@ function App() {
   const [previewReceipt, setPreviewReceipt] = useState(null);
   const [sessionBlobMap, setSessionBlobMap] = useState({});
 
+  const getAccountantsForEntity = (entityId) => {
+    return (users || []).filter(u =>
+      u.roles?.includes('ACCOUNTANT') &&
+      (String(u.entityId) === String(entityId) || (Array.isArray(u.assignedEntities) && u.assignedEntities.some(ae => String(ae) === String(entityId))))
+    );
+  };
+
   // A user is a manager if they are assigned as an explicit approver in the mapping table
   const isManagerApprover = React.useMemo(() => {
     if (!user) return false;
@@ -2009,7 +2093,7 @@ function App() {
 
       // Fetch claims: staff only see their own, managers/finance fetch all here but filtered later
       let claimsQuery = supabase.from('claims').select('*, expense_items(*)');
-      if (!isFin && !isMgr) {
+      if (!user.roles.includes('ADMIN') && !isFin && !isMgr) {
         claimsQuery = claimsQuery.eq('user_id', user.id);
       }
 
@@ -2040,6 +2124,9 @@ function App() {
 
             // Finance/Admin fallback to see all submitted claims in the Compliance Hub
             if (isFin && c.claim_status !== 'NEW') return true;
+
+            // GLOBAL ADMIN EXCEPTION: Admin sees EVERYTHING across all users/entities
+            if (user.roles.includes('ADMIN')) return true;
 
             return false;
           });
@@ -2607,38 +2694,99 @@ function App() {
       <main className="main-content">
         {view === 'dashboard' && (
           <div className="view">
-            <h2>System Overview</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginTop: '1.5rem' }}>
-              <div className="card"><h4>New/Draft</h4><p>{claims.filter(c => c.claimStatus === CLAIM_STATUS.NEW && c.userId == user.id).length || 0}</p></div>
-              <div className="card" style={{ cursor: 'pointer', border: '1px solid var(--primary)' }} onClick={() => setView('receipts-backlog')}>
-                <h4>Floating Receipts</h4>
-                <p style={{ color: 'var(--primary)', fontWeight: 'bold' }}>{receipts.length || 0}</p>
-                <small style={{ color: '#666' }}>Click to Allocate →</small>
-              </div>
-              <div className="card">
-                <h4>Action Required</h4>
-                <p>
-                  {isManagerApprover && !(user.roles.includes('ACCOUNTANT') || user.roles.includes('ADMIN'))
-                    ? claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING && c.userId != user.id && c.approver_id == user.id).length
-                    : claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING).length
-                  }
-                </p>
-              </div>
-              <div className="card">
-                <h4>Completed</h4>
-                <p>
-                  {isManagerApprover
-                    ? claims.filter(c => {
-                      if (c.approvalStatus === APPROVAL_STATUS.PENDING || c.claimStatus === CLAIM_STATUS.NEW || c.userId == user.id) return false;
-                      const actedOnIt = (c.history || []).some(h => h.actorId == user.id);
-                      const isMappedApproverForIt = c.approver_id == user.id;
-                      return actedOnIt || isMappedApproverForIt;
-                    }).length
-                    : claims.filter(c => c.claimStatus === CLAIM_STATUS.CLOSED).length
-                  }
-                </p>
-              </div>
+            <h2>{user.roles.includes('ADMIN') ? 'Administrative Dashboard (Global)' : 'My Dashboard'}</h2>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '1rem', marginTop: '1.5rem' }}>
+              {user.roles.includes('ADMIN') ? (
+                // Existing Admin Dashboard stats...
+                <>
+                  <div className="card" style={{ borderLeft: '4px solid #64748b' }}>
+                    <h4>Total Claims</h4>
+                    <p style={{ fontSize: '1.8rem' }}>{claims.length || 0}</p>
+                    <small style={{ color: '#666' }}>System-wide</small>
+                  </div>
+                  <div className="card" style={{ borderLeft: '4px solid #3b82f6' }}>
+                    <h4>Drafts</h4>
+                    <p style={{ fontSize: '1.8rem', color: '#3b82f6' }}>{claims.filter(c => c.claimStatus === CLAIM_STATUS.NEW).length || 0}</p>
+                    <small style={{ color: '#666' }}>Not yet submitted</small>
+                  </div>
+                  <div className="card" style={{ borderLeft: '4px solid #f59e0b' }}>
+                    <h4>Submitted</h4>
+                    <p style={{ fontSize: '1.8rem', color: '#f59e0b' }}>{claims.filter(c => c.claimStatus === CLAIM_STATUS.SUBMITTED).length || 0}</p>
+                    <small style={{ color: '#666' }}>Pending Finance</small>
+                  </div>
+                  <div className="card" style={{ borderLeft: '1px solid #10b981', borderLeftWidth: '4px' }}>
+                    <h4>Approved</h4>
+                    <p style={{ fontSize: '1.8rem', color: '#10b981' }}>{claims.filter(c => c.approvalStatus === APPROVAL_STATUS.APPROVED && c.claimStatus !== CLAIM_STATUS.CLOSED).length || 0}</p>
+                    <small style={{ color: '#666' }}>Ready to Sync</small>
+                  </div>
+                  <div className="card" style={{ borderLeft: '4px solid #ef4444' }}>
+                    <h4>Rejected</h4>
+                    <p style={{ fontSize: '1.8rem', color: '#ef4444' }}>{claims.filter(c => c.approvalStatus === APPROVAL_STATUS.REJECTED).length || 0}</p>
+                    <small style={{ color: '#666' }}>Correction required</small>
+                  </div>
+                </>
+              ) : user.roles.includes('ACCOUNTANT') ? (
+                <>
+                  <div className="card" style={{ borderLeft: '4px solid #f59e0b' }}>
+                    <h4>Accrued</h4>
+                    <p style={{ fontSize: '1.5rem', color: '#f59e0b' }}>{claims.filter(c => c.claimStatus === CLAIM_STATUS.ACCRUED).length || 0}</p>
+                    <small style={{ color: '#666' }}>Month-end pending</small>
+                  </div>
+                  <div className="card" style={{ borderLeft: '4px solid #10b981' }}>
+                    <h4>Synced (D365FO)</h4>
+                    <p style={{ fontSize: '1.5rem', color: '#10b981' }}>{claims.filter(c => c.claimStatus === CLAIM_STATUS.CLOSED).length || 0}</p>
+                    <small style={{ color: '#666' }}>Finalized</small>
+                  </div>
+                  <div className="card" style={{ borderLeft: '4px solid #3b82f6' }}>
+                    <h4>Submitted</h4>
+                    <p style={{ fontSize: '1.5rem', color: '#3b82f6' }}>{claims.filter(c => c.claimStatus === CLAIM_STATUS.SUBMITTED).length || 0}</p>
+                    <small style={{ color: '#666' }}>Pending Process</small>
+                  </div>
+                  <div className="card" style={{ background: '#f8fafc' }}>
+                    <h4>Your Drafts</h4>
+                    <p style={{ fontSize: '1.5rem' }}>{claims.filter(c => c.userId == user.id && c.claimStatus === CLAIM_STATUS.NEW).length || 0}</p>
+                  </div>
+                  <div className="card" style={{ cursor: 'pointer', background: '#f0f9ff', border: '1px solid #bae6fd' }} onClick={() => setView('receipts-backlog')}>
+                    <h4>Floating Receipts</h4>
+                    <p style={{ fontSize: '1.5rem', color: 'var(--primary)', fontWeight: 'bold' }}>{receipts.length || 0}</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="card" style={{ background: '#f8fafc' }}>
+                    <h4>New/Draft</h4>
+                    <p style={{ fontSize: '1.5rem' }}>{claims.filter(c => c.userId == user.id && c.claimStatus === CLAIM_STATUS.NEW).length || 0}</p>
+                  </div>
+                  <div className="card" style={{ cursor: 'pointer', background: '#f0f9ff', border: '1px solid #bae6fd' }} onClick={() => setView('receipts-backlog')}>
+                    <h4>Floating Receipts</h4>
+                    <p style={{ fontSize: '1.5rem', color: 'var(--primary)', fontWeight: 'bold' }}>{receipts.length || 0}</p>
+                  </div>
+                  <div className="card" style={{ borderLeft: '4px solid #10b981' }}>
+                    <h4>Approved</h4>
+                    <p style={{ fontSize: '1.5rem', color: '#10b981' }}>{claims.filter(c => c.userId == user.id && c.approvalStatus === APPROVAL_STATUS.APPROVED && c.claimStatus !== CLAIM_STATUS.CLOSED).length || 0}</p>
+                  </div>
+                  <div className="card" style={{ borderLeft: '4px solid #ef4444' }}>
+                    <h4>Rejected</h4>
+                    <p style={{ fontSize: '1.5rem', color: '#ef4444' }}>{claims.filter(c => c.userId == user.id && c.approvalStatus === APPROVAL_STATUS.REJECTED).length || 0}</p>
+                  </div>
+                  <div className="card" style={{ borderLeft: '4px solid #64748b' }}>
+                    <h4>Completed</h4>
+                    <p style={{ fontSize: '1.5rem' }}>{claims.filter(c => c.userId == user.id && c.claimStatus === CLAIM_STATUS.CLOSED).length || 0}</p>
+                  </div>
+                </>
+              )}
             </div>
+            {!user.roles.includes('ADMIN') && (
+              <div style={{ marginTop: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="card" style={{ cursor: 'pointer', border: '1px solid var(--primary)', background: '#eff6ff' }} onClick={() => setView('new-claim')}>
+                  <h3 style={{ margin: 0, color: 'var(--primary)' }}>+ Create New Claim</h3>
+                </div>
+                <div className="card" style={{ cursor: 'pointer', border: '1px solid var(--primary)', background: '#eff6ff' }} onClick={() => setView('imports')}>
+                  <h3 style={{ margin: 0, color: 'var(--primary)' }}>💳 Import Statements</h3>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -2647,12 +2795,18 @@ function App() {
             <div className="header"><h2>My Expense Claims</h2><button className="btn btn-primary" onClick={() => setView('new-claim')}>+ Create New</button></div>
             <div className="card">
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr style={{ textAlign: 'left' }}><th>ID</th><th>Title</th><th>Total</th><th>Claim Status</th><th>Approval</th><th>Action</th></tr></thead>
+                <thead><tr style={{ textAlign: 'left' }}><th>ID</th><th>Title</th><th>Total</th><th>Accountant</th><th>Claim Status</th><th>Approval</th><th>Action</th></tr></thead>
                 <tbody>{claims.filter(c => c.userId == user.id).map(c => (
                   <tr key={c.id}>
                     <td style={{ padding: '1rem 0' }}><code style={{ fontSize: '0.75rem' }}>{c.id}</code></td>
-                    <td>{c.title}</td>
+                    <td>{c.title} {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>}</td>
                     <td style={{ fontWeight: 'bold' }}>€{c.expenses.reduce((acc, e) => acc + Number(e.amount), 0).toFixed(2)}</td>
+                    <td>
+                      {(() => {
+                        const accs = getAccountantsForEntity(c.entityId);
+                        return accs.length > 0 ? accs.map(a => a.name).join(', ') : <span style={{ color: '#999', fontSize: '0.8rem' }}>Unassigned</span>;
+                      })()}
+                    </td>
                     <td><span className={`badge badge-${c.claimStatus.toLowerCase()}`}>{c.claimStatus}</span></td>
                     <td><span className={`badge badge-${c.approvalStatus.replace(' ', '-').toLowerCase()}`}>{c.approvalStatus}</span></td>
                     <td>
@@ -2678,6 +2832,7 @@ function App() {
             claim={selectedClaim}
             owner={users.find(u => u.id == selectedClaim.userId)}
             approver={users.find(u => u.id === selectedClaim.approver_id)}
+            accountants={getAccountantsForEntity(selectedClaim.entityId)}
             currentUser={user}
             entity={entities.find(e => e.id == selectedClaim.entityId)}
             onBack={() => setSelectedClaim(null)}
@@ -2747,8 +2902,12 @@ function App() {
 
             {/* Entity Traffic Indicators (PRD 8.0) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginTop: '1.5rem' }}>
-              {entities.map(e => {
-                const total = claims.filter(c => c.entityId == e.id && c.claimStatus !== 'NEW').length;
+              {entities.filter(e => {
+                if (user.roles.includes('ADMIN')) return true;
+                const assigned = [String(user.entityId), ...(user.assignedEntities || []).filter(ae => ae).map(ae => String(ae))];
+                return assigned.includes(String(e.id));
+              }).map(e => {
+                const total = claims.filter(c => c.entityId == e.id && (user.roles.includes('ADMIN') || c.claimStatus !== 'NEW')).length;
                 const closed = claims.filter(c => c.entityId == e.id && c.claimStatus === 'CLOSED').length;
                 const progress = total > 0 ? (closed / total) * 100 : 0;
                 return (
@@ -2767,14 +2926,20 @@ function App() {
 
             <div className="card" style={{ marginTop: '1.5rem' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr style={{ textAlign: 'left' }}><th>Staff</th><th>Approver</th><th>Title</th><th>Claim Status</th><th>Action</th></tr></thead>
-                <tbody>{claims.filter(c => c.claimStatus !== CLAIM_STATUS.NEW).map(c => (
+                <thead><tr style={{ textAlign: 'left' }}><th>Staff</th><th>Approver</th><th>Accountant</th><th>Title</th><th>Claim Status</th><th>Action</th></tr></thead>
+                <tbody>{claims.filter(c => {
+                  if (user.roles.includes('ADMIN')) return true;
+                  const assigned = [String(user.entityId), ...(user.assignedEntities || []).filter(ae => ae).map(ae => String(ae))];
+                  const isScoped = assigned.includes(String(c.entityId));
+                  return isScoped && (c.claimStatus !== CLAIM_STATUS.NEW);
+                }).map(c => (
                   <tr key={c.id}>
                     <td>{users.find(u => u.id == c.userId)?.name}</td>
                     <td><small>{c.approver_id ? users.find(u => u.id == c.approver_id)?.name : 'N/A'}</small></td>
-                    <td>{c.title}</td>
+                    <td><small>{getAccountantsForEntity(c.entityId).map(a => a.name).join(', ') || 'Unassigned'}</small></td>
+                    <td>{c.title} {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>}</td>
                     <td>{c.claimStatus}</td>
-                    <td><button className="btn btn-outline" onClick={() => setSelectedClaim(c)}>Audit Detail</button></td>
+                    <td><button className="btn btn-outline" onClick={() => setSelectedClaim({ ...c, isViewOnly: c.claimStatus === CLAIM_STATUS.CLOSED && !user.roles.includes('ADMIN') })}>Audit Detail</button></td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -2799,8 +2964,14 @@ function App() {
                     <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem 0', borderBottom: '1px solid #f0f0f0', alignItems: 'center' }}>
                       <div>
                         <code style={{ fontSize: '0.7rem', color: '#888', display: 'block', marginBottom: '4px' }}>{c.id}</code>
-                        <strong>{c.title}</strong> by {users.find(u => u.id == c.userId)?.name}
-                        <div style={{ fontSize: '0.75rem', color: '#666' }}>Submitted: {c.submission_date ? new Date(c.submission_date).toLocaleDateString() : 'Draft'}</div>
+                        <strong>{c.title}</strong> {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>} by {users.find(u => u.id == c.userId)?.name}
+                        <div style={{ fontSize: '0.75rem', color: '#666' }}>
+                          Submitted: {c.submission_date ? new Date(c.submission_date).toLocaleDateString() : 'Draft'} |
+                          Accountant: {(() => {
+                            const accs = getAccountantsForEntity(c.entityId);
+                            return accs.length > 0 ? accs.map(a => a.name).join(', ') : 'Unassigned';
+                          })()}
+                        </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                         <span className="badge badge-pending">PENDING</span>
@@ -2827,7 +2998,12 @@ function App() {
                     <div key={c.id} style={{ padding: '0.75rem 0', borderBottom: '1px solid #f0f0f0' }}>
                       <code style={{ fontSize: '0.65rem', color: '#888', display: 'block', marginBottom: '2px' }}>{c.id}</code>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <strong style={{ fontSize: '0.85rem' }}>{c.title}</strong>
+                        <div>
+                          <strong style={{ fontSize: '0.85rem' }}>{c.title}</strong> by {users.find(u => u.id == c.userId)?.name}
+                          <div style={{ fontSize: '0.7rem', color: '#888' }}>
+                            Accountant: {getAccountantsForEntity(c.entityId).map(a => a.name).join(', ') || 'Unassigned'}
+                          </div>
+                        </div>
                         <span className={`badge badge-${c.approvalStatus.replace(' ', '-').toLowerCase()}`} style={{ fontSize: '0.65rem' }}>{c.approvalStatus}</span>
                       </div>
                       <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '4px' }}>By: {users.find(u => u.id == c.userId)?.name}</div>
@@ -2870,17 +3046,17 @@ function App() {
                   // Background fetch for cloud backup if missing locally
                   const key = `receipt_blob_${previewReceipt}`;
                   if (!localStorage.getItem(key) && !sessionBlobMap[previewReceipt]) {
-                    supabase.storage.from('receipts').download(encodeURIComponent(previewReceipt)).then(({ data, error }) => {
+                    // REMOVED encodeURIComponent: The Supabase client handles the full path (including slashes) naturally.
+                    supabase.storage.from('receipts').download(previewReceipt).then(({ data, error }) => {
                       if (data && !error) {
                         const url = URL.createObjectURL(data);
                         setSessionBlobMap(prev => ({ ...prev, [previewReceipt]: { url, type: data.type } }));
-                        // Also try to cache in localStorage if small, but ObjectURL is priority
                       }
                     });
                   }
                   return null;
                 })()}
-                <small style={{ color: '#666' }}>{previewReceipt}</small>
+                <small style={{ color: '#666' }}>{previewReceipt.split('/').pop()}</small>
               </div>
               <div className="preview-image-container">
                 {(() => {
