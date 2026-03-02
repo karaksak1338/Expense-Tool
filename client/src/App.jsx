@@ -62,7 +62,12 @@ const LoginPage = ({ onLogin }) => {
         if (error) throw error;
       }
     } catch (err) {
-      setError(err.message || 'Authentication failed');
+      console.error("DEBUG: Auth Error:", err);
+      if (err.message?.toLowerCase().includes('confirm')) {
+        setError('Please check your email inbox to confirm your account first!');
+      } else {
+        setError(err.message || 'Authentication failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -219,7 +224,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0010</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0011</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -2161,21 +2166,27 @@ function App() {
 
     // 2. Auth State Listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
-        // Sync user state from our public 'users' table
-        const { data: appUser } = await supabase.from('users').select('*').eq('email', session.user.email).single();
-        if (appUser) {
-          const fresh = { ...appUser, entityId: appUser.entity_id, approverId: appUser.approver_id, assignedEntities: appUser.assigned_entities || [] };
-          setUser(fresh);
-          localStorage.setItem('expenseApp_user', JSON.stringify(fresh));
+      console.log(`DEBUG: Auth Event: ${event}`, session?.user?.email);
+      try {
+        if (session) {
+          // Sync user state from our public 'users' table
+          const { data: appUser } = await supabase.from('users').select('*').eq('email', session.user.email).single();
+          if (appUser) {
+            const fresh = { ...appUser, entityId: appUser.entity_id, approverId: appUser.approver_id, assignedEntities: appUser.assigned_entities || [] };
+            setUser(fresh);
+            localStorage.setItem('expenseApp_user', JSON.stringify(fresh));
+          } else {
+            console.warn("DEBUG: User in Auth but not in public.users table:", session.user.email);
+            // Fallback if user is in Auth but not in public table yet
+            const temp = { email: session.user.email, name: session.user.email.split('@')[0], roles: ['STAFF'] };
+            setUser(temp);
+          }
         } else {
-          // Fallback if user is in Auth but not in public table yet
-          const temp = { email: session.user.email, name: session.user.email.split('@')[0], roles: ['STAFF'] };
-          setUser(temp);
+          setUser(null);
+          localStorage.removeItem('expenseApp_user');
         }
-      } else {
-        setUser(null);
-        localStorage.removeItem('expenseApp_user');
+      } catch (authListenerErr) {
+        console.error("DEBUG: Auth Listener Error:", authListenerErr);
       }
     });
 
