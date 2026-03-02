@@ -114,7 +114,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0007</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0008</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -155,8 +155,8 @@ const ClaimReport = ({ claim, user, entity }) => (
               <td>{e.type}</td>
               <td style={{ fontFamily: 'monospace' }}>{e.glAccount || '600000'}</td>
               <td>{e.description}</td>
-              <td style={{ textAlign: 'right' }}>€{Number(e.amount).toFixed(2)}</td>
-              <td style={{ textAlign: 'right' }}>€{((Number(e.amount) * (e.vatRate || 0)) / 100).toFixed(2)}</td>
+              <td style={{ textAlign: 'right' }}>{claim.currency || '€'}{Number(e.amount).toFixed(2)}</td>
+              <td style={{ textAlign: 'right' }}>{claim.currency || '€'}{((Number(e.amount) * (e.vatRate || 0)) / 100).toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
@@ -166,11 +166,11 @@ const ClaimReport = ({ claim, user, entity }) => (
         <div style={{ width: '250px', borderTop: '2px solid #333', paddingTop: '1rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
             <span>Total Expenses:</span>
-            <span>€{claim.expenses.reduce((acc, e) => acc + Number(e.amount), 0).toFixed(2)}</span>
+            <span>{claim.currency || '€'}{claim.expenses.reduce((acc, e) => acc + Number(e.amount), 0).toFixed(2)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '1.2rem' }}>
             <span>Net Payable:</span>
-            <span>€{(claim.expenses.reduce((acc, e) => acc + Number(e.amount), 0) - Number(claim.advanceAmount)).toFixed(2)}</span>
+            <span>{claim.currency || '€'}{(claim.expenses.reduce((acc, e) => acc + Number(e.amount), 0) - Number(claim.advanceAmount)).toFixed(2)}</span>
           </div>
         </div>
       </div>
@@ -311,7 +311,7 @@ const DetailView = ({ claim, owner, approver, accountants, currentUser, entity, 
               📄 Original Statement Attached
             </span>
           )}
-          <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500' }}>Advance: €{claim.advanceAmount}</span>
+          <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500' }}>Advance: {claim.currency || '€'}{claim.advanceAmount}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
             {entity && <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#f0f4f8', padding: '4px 8px', borderRadius: '4px', border: '1px solid #d9e2ec' }}>Entity: <strong>{entity.code} - {entity.name}</strong></span>}
             {approver && <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#fff', padding: '4px 8px', borderRadius: '4px', border: '1px solid #ddd' }}>Approver: <strong>{approver.name}</strong></span>}
@@ -368,7 +368,7 @@ const DetailView = ({ claim, owner, approver, accountants, currentUser, entity, 
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                        <strong>€{Number(e.claim_amount || e.amount).toFixed(2)}</strong>
+                        <strong>{e.claim_currency || '€'}{Number(e.claim_amount || e.amount).toFixed(2)}</strong>
                         {hasConversion && (
                           <small style={{ color: '#666', fontSize: '0.7rem' }}>
                             {e.expense_currency} {e.gross_amount || e.amount} @ {e.exchange_rate}
@@ -602,7 +602,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
     if (!dateStr || !exchangeRates || exchangeRates.length === 0) return null;
     const period = dateStr.substring(0, 7); // YYYY-MM
     const rateItem = exchangeRates.find(r => r.period === period && r.from_currency === fromCur && r.to_currency === toCur);
-    return rateItem ? rateItem.rate : null;
+    return rateItem ? (rateItem.exchange_rate || rateItem.rate) : null;
   };
 
   const calculateConvertedAmount = (exp) => {
@@ -2432,7 +2432,7 @@ function App() {
           if (e.currency !== claimCurrency) {
             const period = e.date ? e.date.substring(0, 7) : null;
             const rateItem = exchangeRates?.find(r => r.period === period && r.from_currency === e.currency && r.to_currency === claimCurrency);
-            if (rateItem) rate = Number(rateItem.rate);
+            if (rateItem) rate = Number(rateItem.exchange_rate || rateItem.rate);
           }
 
           return {
@@ -2910,7 +2910,7 @@ function App() {
                   <tr key={c.id}>
                     <td style={{ padding: '1rem 0' }}><code style={{ fontSize: '0.75rem' }}>{c.id}</code></td>
                     <td>{c.title} {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>}</td>
-                    <td style={{ fontWeight: 'bold' }}>€{c.expenses.reduce((acc, e) => acc + Number(e.amount), 0).toFixed(2)}</td>
+                    <td style={{ fontWeight: 'bold' }}>{c.currency || '€'}{c.expenses.reduce((acc, e) => acc + Number(e.amount), 0).toFixed(2)}</td>
                     <td>
                       {(() => {
                         const accs = getAccountantsForEntity(c.entityId);
