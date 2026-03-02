@@ -109,7 +109,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         {(hasRole('ACCOUNTANT') || hasRole('ADMIN')) && (
           <div className={`nav-item ${currentView === 'finance' ? 'active' : ''}`} onClick={() => onViewChange('finance')}>🏦 Compliance Hub</div>
         )}
-        {hasRole('ADMIN') && (
+        {(hasRole('ACCOUNTANT') || hasRole('ADMIN')) && (
           <div className={`nav-item ${currentView === 'admin' ? 'active' : ''}`} onClick={() => onViewChange('admin')}>⚙️ Control Center</div>
         )}
       </nav>
@@ -190,6 +190,7 @@ const DetailView = ({ claim, owner, approver, accountants, currentUser, entity, 
   const [activeTab, setActiveTab] = useState('details');
   const [syncing, setSyncing] = useState(false);
   const [history, setHistory] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [attachedReceipts, setAttachedReceipts] = useState({});
 
   React.useEffect(() => {
@@ -454,11 +455,20 @@ const DetailView = ({ claim, owner, approver, accountants, currentUser, entity, 
             <div className="card">
               <h3>Audit Trail</h3>
               <ul style={{ listStyle: 'none', marginTop: '1rem' }}>
-                {history.map(log => (
-                  <li key={log.id} style={{ padding: '0.8rem 0', borderBottom: '1px solid #f0f0f0', display: 'flex', gap: '1rem' }}>
-                    <small style={{ color: '#666', minWidth: '150px' }}>{new Date(log.timestamp).toLocaleString()}</small>
-                    <span><strong>{log.action}</strong> by {log.actorId === owner.id ? 'Staff' : (log.actorId === currentUser.id ? 'Self' : 'Reviewer')}</span>
-                    {log.details?.error && <span style={{ color: 'var(--error)' }}>({log.details.error})</span>}
+                {history.map((log, idx) => (
+                  <li key={idx} style={{ padding: '1rem', borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#fff' : '#f8fafc', borderRadius: '4px', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '0.4rem' }}>
+                      <span style={{ fontWeight: '600', color: 'var(--primary)' }}>{log.action}</span>
+                      <small style={{ color: '#64748b' }}>{new Date(log.timestamp).toLocaleString()}</small>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.85rem' }}>By <strong>{log.actorName || (log.actorId === owner?.id ? 'Staff' : 'Reviewer')}</strong></span>
+                      <span style={{ color: '#cbd5e1' }}>|</span>
+                      <span className={`badge badge-${(log.newClaimStatus || 'NEW').toLowerCase()}`} style={{ fontSize: '0.7rem' }}>Claim: {log.newClaimStatus || 'NEW'}</span>
+                      <span className={`badge badge-${(log.newApprovalStatus || 'N/A').replace(' ', '-').toLowerCase()}`} style={{ fontSize: '0.7rem' }}>Approval: {log.newApprovalStatus || 'N/A'}</span>
+                    </div>
+                    {log.details?.error && <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '4px' }}>⚠️ {log.details.error}</div>}
+                    {log.comment && <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#fff', borderLeft: '3px solid #e2e8f0', fontSize: '0.85rem', fontStyle: 'italic' }}>"{log.comment}"</div>}
                   </li>
                 ))}
               </ul>
@@ -1040,6 +1050,7 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
     if (!file) return;
     setStatementFile(file);
     setIsUploading(true);
+    setGlobalLoadingMessage(`Gemini AI is analyzing statement: ${file.name}...`);
 
     // Robustness: Cache the statement locally for instant preview, same as Receipts Library
     const reader = new FileReader();
@@ -1060,7 +1071,8 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
       const allowedCategories = (expenseTypes || []).map(t => t.label).join(', ');
       formData.append('allowedCategories', allowedCategories);
 
-      const response = await fetch('http://localhost:3001/api/extract-statement', {
+      const proxyBaseUrl = import.meta.env.VITE_GEMINI_PROXY_URL || 'http://localhost:3001';
+      const response = await fetch(`${proxyBaseUrl}/api/extract-statement`, {
         method: 'POST',
         body: formData
       });
@@ -1093,6 +1105,7 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
       alert('Failed to extract data from statement. Please ensure it is a clear PDF, Image, or CSV.');
     } finally {
       setIsUploading(false);
+      setGlobalLoadingMessage(null);
     }
   };
 
@@ -1243,6 +1256,7 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState(null);
+  const [search, setSearch] = useState('');
   const fileInputRef = React.useRef(null);
 
   useEffect(() => {
@@ -1309,7 +1323,16 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
     <div className="view">
       <div className="header">
         <h2>Receipt Backlog (Unallocated Library)</h2>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <div style={{ position: 'relative' }}>
+            <input
+              type="text"
+              placeholder="🔍 Search receipts..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ padding: '0.4rem 0.8rem 0.4rem 2rem', borderRadius: '15px', border: '1px solid #e2e8f0', width: '200px', fontSize: '0.85rem' }}
+            />
+          </div>
           <button className="btn btn-outline" onClick={onBack}>Back</button>
           <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={onFileChange} />
           <button className="btn btn-primary" onClick={() => fileInputRef.current.click()}>+ Upload from Local Machine</button>
@@ -1319,7 +1342,13 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
       <div className="card" style={{ marginTop: '1.5rem' }}>
         {loading ? <p>Loading backlog...</p> : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1.5rem' }}>
-            {receipts.map(r => (
+            {receipts.filter(r => {
+              const s = search.toLowerCase();
+              return search === '' ||
+                r.file_name?.toLowerCase().includes(s) ||
+                r.vendor_suggestion?.toLowerCase().includes(s) ||
+                (r.id && String(r.id).toLowerCase().includes(s));
+            }).map(r => (
               <div key={r.id} className="card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
@@ -1402,7 +1431,7 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
   );
 };
 
-const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exchangeRates, userEntityApprovers, aiPrompts, onSave, onDeleteItem }) => {
+const AdminCenter = ({ user, entities, users, projects, departments, expenseTypes, exchangeRates, userEntityApprovers, aiPrompts, onSave, onDeleteItem }) => {
   const [activeTab, setActiveTab] = useState('entities');
   const [editingItem, setEditingItem] = useState(null);
   const [search, setSearch] = useState('');
@@ -1471,17 +1500,19 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
               style={{ padding: '0.4rem 0.8rem', borderRadius: '4px', border: '1px solid #ddd', width: '250px' }}
             />
           </div>
-          <button className="btn btn-primary" onClick={() => {
-            const newItem = { isNew: true };
-            if (activeTab === 'entities') newItem.type = 'entity';
-            else if (activeTab === 'users') newItem.type = 'user';
-            else if (activeTab === 'projects') newItem.type = 'project';
-            else if (activeTab === 'departments') newItem.type = 'department';
-            else if (activeTab === 'expenseTypes') newItem.type = 'expenseType';
-            else if (activeTab === 'exchangeRates') newItem.type = 'exchangeRate';
-            else if (activeTab === 'aiPrompts') newItem.type = 'aiPrompt';
-            setEditingItem(newItem);
-          }}>+ Add {activeTab === 'entities' ? 'Entity' : activeTab === 'expenseTypes' ? 'Category' : activeTab === 'exchangeRates' ? 'Rate' : activeTab === 'aiPrompts' ? 'Prompt' : activeTab.slice(0, -1)}</button>
+          {(!isRestricted || activeTab !== 'entities') && (
+            <button className="btn btn-primary" onClick={() => {
+              const newItem = { isNew: true };
+              if (activeTab === 'entities') newItem.type = 'entity';
+              else if (activeTab === 'users') newItem.type = 'user';
+              else if (activeTab === 'projects') newItem.type = 'project';
+              else if (activeTab === 'departments') newItem.type = 'department';
+              else if (activeTab === 'expenseTypes') newItem.type = 'expenseType';
+              else if (activeTab === 'exchangeRates') newItem.type = 'exchangeRate';
+              else if (activeTab === 'aiPrompts') newItem.type = 'aiPrompt';
+              setEditingItem(newItem);
+            }}>+ Add {activeTab === 'entities' ? 'Entity' : activeTab === 'expenseTypes' ? 'Category' : activeTab === 'exchangeRates' ? 'Rate' : activeTab === 'aiPrompts' ? 'Prompt' : activeTab.slice(0, -1)}</button>
+          )}
         </div>
 
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1580,8 +1611,10 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
                 <td><small style={{ color: '#555', display: 'block', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.prompt_text}</small></td>
                 <td><small>{new Date(p.updated_at).toLocaleDateString()}</small></td>
                 <td>
-                  <button className="btn btn-outline" style={{ marginRight: '0.5rem' }} onClick={() => setEditingItem({ ...p, type: 'aiPrompt' })}>Edit</button>
-                  <button className="btn btn-outline" style={{ color: 'var(--error)' }} onClick={() => onDeleteItem('ai_prompts', p.id)}>Delete</button>
+                  <button className="btn btn-outline" style={{ marginRight: '0.5rem' }} onClick={() => setEditingItem({ ...p, type: 'aiPrompt', isReadOnly: isRestricted })}>
+                    {isRestricted ? '👁️ View' : 'Edit'}
+                  </button>
+                  {!isRestricted && <button className="btn btn-outline" style={{ color: 'var(--error)' }} onClick={() => onDeleteItem('ai_prompts', p.id)}>Delete</button>}
                 </td>
               </tr>
             ))}
@@ -1598,20 +1631,25 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
               {(editingItem.type === 'entity' || editingItem.type === 'user' || editingItem.type === 'project' || editingItem.type === 'department') && (
                 <div className="form-group">
                   <label>Display Name</label>
-                  <input value={editingItem.name || ''} onChange={e => setEditingItem({ ...editingItem, name: e.target.value })} placeholder="Enter name..." />
+                  <input
+                    disabled={isRestricted && editingItem.type === 'entity'}
+                    value={editingItem.name || ''}
+                    onChange={e => setEditingItem({ ...editingItem, name: e.target.value })}
+                    placeholder="Enter name..."
+                  />
                 </div>
               )}
 
               {editingItem.type === 'entity' && (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group"><label>Company Code</label><input value={editingItem.code || ''} onChange={e => setEditingItem({ ...editingItem, code: e.target.value })} /></div>
-                    <div className="form-group"><label>Logo (Emoji or URL)</label><input value={editingItem.logo || ''} onChange={e => setEditingItem({ ...editingItem, logo: e.target.value })} /></div>
+                    <div className="form-group"><label>Company Code</label><input disabled={isRestricted && editingItem.type === 'entity'} value={editingItem.code || ''} onChange={e => setEditingItem({ ...editingItem, code: e.target.value })} /></div>
+                    <div className="form-group"><label>Logo (Emoji or URL)</label><input disabled={isRestricted && editingItem.type === 'entity'} value={editingItem.logo || ''} onChange={e => setEditingItem({ ...editingItem, logo: e.target.value })} /></div>
                   </div>
-                  <div className="form-group"><label>Address</label><input value={editingItem.address || ''} onChange={e => setEditingItem({ ...editingItem, address: e.target.value })} /></div>
+                  <div className="form-group"><label>Address</label><input disabled={isRestricted && editingItem.type === 'entity'} value={editingItem.address || ''} onChange={e => setEditingItem({ ...editingItem, address: e.target.value })} /></div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                    <div className="form-group"><label>Country</label><input value={editingItem.country || ''} onChange={e => setEditingItem({ ...editingItem, country: e.target.value })} /></div>
-                    <div className="form-group"><label>Country ISO3</label><input value={editingItem.countryIso3 || ''} onChange={e => setEditingItem({ ...editingItem, countryIso3: e.target.value })} /></div>
+                    <div className="form-group"><label>Country</label><input disabled={isRestricted && editingItem.type === 'entity'} value={editingItem.country || ''} onChange={e => setEditingItem({ ...editingItem, country: e.target.value })} /></div>
+                    <div className="form-group"><label>Country ISO3</label><input disabled={isRestricted && editingItem.type === 'entity'} value={editingItem.countryIso3 || ''} onChange={e => setEditingItem({ ...editingItem, countryIso3: e.target.value })} /></div>
                   </div>
                   <div className="form-group" style={{ background: '#f0f9ff', padding: '0.75rem', borderRadius: '4px', border: '1px solid #bae6fd' }}>
                     <label style={{ fontWeight: 'bold', color: '#0369a1', fontSize: '0.85rem' }}>Assigned Accountants</label>
@@ -1900,7 +1938,7 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
                 <>
                   <div className="form-group">
                     <label>Prompt Type Identifier (e.g. "receipt")</label>
-                    <input value={editingItem.prompt_type || ''} onChange={e => setEditingItem({ ...editingItem, prompt_type: e.target.value })} disabled={!editingItem.isNew} />
+                    <input value={editingItem.prompt_type || ''} onChange={e => setEditingItem({ ...editingItem, prompt_type: e.target.value })} disabled={!editingItem.isNew || editingItem.isReadOnly} />
                   </div>
                   <div className="form-group">
                     <label>Extraction Instructions (Sent to Gemini 2.5 Flash)</label>
@@ -1908,6 +1946,7 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
                     <textarea
                       value={editingItem.prompt_text || ''}
                       onChange={e => setEditingItem({ ...editingItem, prompt_text: e.target.value })}
+                      disabled={editingItem.isReadOnly}
                       style={{ width: '100%', height: '200px', padding: '0.5rem', fontFamily: 'monospace', fontSize: '0.85rem' }}
                     />
                   </div>
@@ -1916,8 +1955,8 @@ const AdminCenter = ({ entities, users, projects, departments, expenseTypes, exc
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '2rem' }}>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSave}>Confirm & Sync</button>
-              <button className="btn btn-outline" onClick={() => setEditingItem(null)}>Discard</button>
+              {!editingItem.isReadOnly && <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSave}>Confirm & Sync</button>}
+              <button className="btn btn-outline" style={{ flex: editingItem.isReadOnly ? 1 : 'none' }} onClick={() => setEditingItem(null)}>{editingItem.isReadOnly ? 'Close' : 'Discard'}</button>
             </div>
           </div>
         </div>
@@ -1951,6 +1990,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [previewReceipt, setPreviewReceipt] = useState(null);
   const [sessionBlobMap, setSessionBlobMap] = useState({});
+  const [globalLoadingMessage, setGlobalLoadingMessage] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const getAccountantsForEntity = (entityId) => {
     return (users || []).filter(u =>
@@ -2110,9 +2151,12 @@ function App() {
           visibleClaims = cRes.data.filter(c => {
             if (c.user_id === user.id) return true; // Always download your own claims
 
+            // GLOBAL ADMIN EXCEPTION: Admin sees EVERYTHING across all users/entities
+            if (user.roles.includes('ADMIN')) return true;
+
             // Check if user is accountant for this entity
             const isAccForEntity = userEntityApprovers.some(ua => ua.user_id === user.id && ua.entity_id === c.entity_id && ua.is_accountant);
-            if (isFin && isAccForEntity && c.claim_status !== 'NEW') return true;
+            if (user.roles.includes('ACCOUNTANT') && isAccForEntity && c.claim_status !== 'NEW') return true;
 
             // Check if user is explicit approver for this claim
             const isApprForUser = c.approver_id == user.id;
@@ -2121,12 +2165,6 @@ function App() {
             // Check if the user ever previously acted on this claim (so it shows in Processed History)
             const actedOnIt = (c.history || []).some(h => h.actorId == user.id);
             if (actedOnIt) return true;
-
-            // Finance/Admin fallback to see all submitted claims in the Compliance Hub
-            if (isFin && c.claim_status !== 'NEW') return true;
-
-            // GLOBAL ADMIN EXCEPTION: Admin sees EVERYTHING across all users/entities
-            if (user.roles.includes('ADMIN')) return true;
 
             return false;
           });
@@ -2324,6 +2362,23 @@ function App() {
       }
 
       // 1. Save Claim Base
+      // Audit History logic for saving
+      const isNew = String(dbBase.id).startsWith('DRAFT-');
+      const actionText = isNew ? "Created"
+        : (dbBase.claimStatus === CLAIM_STATUS.SUBMITTED ? "Submitted" : "Saved as Draft");
+
+      const { data: currentClaim } = await supabase.from('claims').select('history, approval_status, claim_status').eq('id', dbBase.id).single();
+      const newHistory = [...(currentClaim?.history || []), {
+        timestamp: new Date().toISOString(),
+        actorId: user.id,
+        actorName: user.name,
+        action: actionText,
+        prevApprovalStatus: currentClaim?.approval_status || 'N/A',
+        prevClaimStatus: currentClaim?.claim_status || 'NEW',
+        newApprovalStatus: dbBase.approvalStatus || 'N/A',
+        newClaimStatus: dbBase.claimStatus || 'NEW'
+      }];
+
       const safeClaim = {
         id: dbBase.id,
         title: dbBase.title,
@@ -2337,7 +2392,8 @@ function App() {
         claim_type: claimData.claim_type || 'CashReimbursement',
         statement_attachment: claimData.statement_attachment || null,
         import_batch_id: claimData.import_batch_id || null,
-        submission_date: dbBase.claim_status === CLAIM_STATUS.SUBMITTED ? new Date().toISOString() : (dbBase.submission_date ? new Date(dbBase.submission_date).toISOString() : null)
+        submission_date: dbBase.claim_status === CLAIM_STATUS.SUBMITTED ? new Date().toISOString() : (dbBase.submission_date ? new Date(dbBase.submission_date).toISOString() : null),
+        history: newHistory
       };
 
       const { data: claim, error: cErr } = await supabase
@@ -2449,9 +2505,21 @@ function App() {
     try {
       // 1. Get current claim for history
       const { data: current } = await supabase.from('claims').select('*').eq('id', id).single();
+      const actionText = update.claimStatus === CLAIM_STATUS.CLOSED ? "Synced (Closed)"
+        : update.claimStatus === CLAIM_STATUS.ACCRUED ? "Accrued"
+          : update.approvalStatus === APPROVAL_STATUS.APPROVED ? "Approved"
+            : update.approvalStatus === APPROVAL_STATUS.REJECTED ? "Rejected"
+              : "Status Updated";
+
       const newHistory = [...(current?.history || []), {
         timestamp: new Date().toISOString(),
         actorId: user.id,
+        actorName: user.name,
+        action: actionText,
+        prevApprovalStatus: current.approval_status,
+        prevClaimStatus: current.claim_status,
+        newApprovalStatus: update.approvalStatus || current.approval_status,
+        newClaimStatus: update.claimStatus || current.claim_status,
         ...update
       }];
 
@@ -2480,6 +2548,7 @@ function App() {
   };
 
   const handleLocalReceiptUpload = async (file) => {
+    setGlobalLoadingMessage(`Gemini AI is analyzing ${file.name}...`);
     try {
       // 1. Get the permitted categories for this user's entity to constrain the AI
       const userEnt = entities.find(e => e.id == user.entityId);
@@ -2512,7 +2581,8 @@ function App() {
       let fetchFailed = false;
 
       try {
-        const response = await fetch('http://localhost:3001/api/extract', {
+        const proxyBaseUrl = import.meta.env.VITE_GEMINI_PROXY_URL || 'http://localhost:3001';
+        const response = await fetch(`${proxyBaseUrl}/api/extract`, {
           method: 'POST',
           body: formData
         });
@@ -2642,9 +2712,11 @@ function App() {
       // Update local state smoothly
       setReceipts(prev => prev.map(r => r.id === baseReceiptId ? { ...r, ...updatePayload } : r));
 
+      setGlobalLoadingMessage(null);
       return { id: baseReceiptId, data: updatePayload };
     } catch (err) {
       console.error("Upload process failed catastrophically:", err);
+      setGlobalLoadingMessage(null);
       return null;
     }
   };
@@ -2728,25 +2800,32 @@ function App() {
                 </>
               ) : user.roles.includes('ACCOUNTANT') ? (
                 <>
-                  <div className="card" style={{ borderLeft: '4px solid #f59e0b' }}>
-                    <h4>Accrued</h4>
-                    <p style={{ fontSize: '1.5rem', color: '#f59e0b' }}>{claims.filter(c => c.claimStatus === CLAIM_STATUS.ACCRUED).length || 0}</p>
-                    <small style={{ color: '#666' }}>Month-end pending</small>
-                  </div>
-                  <div className="card" style={{ borderLeft: '4px solid #10b981' }}>
-                    <h4>Synced (D365FO)</h4>
-                    <p style={{ fontSize: '1.5rem', color: '#10b981' }}>{claims.filter(c => c.claimStatus === CLAIM_STATUS.CLOSED).length || 0}</p>
-                    <small style={{ color: '#666' }}>Finalized</small>
-                  </div>
-                  <div className="card" style={{ borderLeft: '4px solid #3b82f6' }}>
-                    <h4>Submitted</h4>
-                    <p style={{ fontSize: '1.5rem', color: '#3b82f6' }}>{claims.filter(c => c.claimStatus === CLAIM_STATUS.SUBMITTED).length || 0}</p>
-                    <small style={{ color: '#666' }}>Pending Process</small>
-                  </div>
-                  <div className="card" style={{ background: '#f8fafc' }}>
-                    <h4>Your Drafts</h4>
-                    <p style={{ fontSize: '1.5rem' }}>{claims.filter(c => c.userId == user.id && c.claimStatus === CLAIM_STATUS.NEW).length || 0}</p>
-                  </div>
+                  {(() => {
+                    const scopedClaims = claims.filter(c => (user.assignedEntities?.includes(c.entityId) || c.entityId === user.entityId));
+                    return (
+                      <>
+                        <div className="card" style={{ borderLeft: '4px solid #f59e0b' }}>
+                          <h4>Total Accrued</h4>
+                          <p style={{ fontSize: '1.5rem', color: '#f59e0b' }}>{scopedClaims.filter(c => c.claimStatus === CLAIM_STATUS.ACCRUED).length || 0}</p>
+                          <small style={{ color: '#666' }}>Scoped Entities</small>
+                        </div>
+                        <div className="card" style={{ borderLeft: '4px solid #10b981' }}>
+                          <h4>Synced (D365FO)</h4>
+                          <p style={{ fontSize: '1.5rem', color: '#10b981' }}>{scopedClaims.filter(c => c.claimStatus === CLAIM_STATUS.CLOSED).length || 0}</p>
+                          <small style={{ color: '#666' }}>Scoped Entities</small>
+                        </div>
+                        <div className="card" style={{ borderLeft: '4px solid #3b82f6' }}>
+                          <h4>Total Submitted</h4>
+                          <p style={{ fontSize: '1.5rem', color: '#3b82f6' }}>{scopedClaims.filter(c => c.claimStatus === CLAIM_STATUS.SUBMITTED).length || 0}</p>
+                          <small style={{ color: '#666' }}>Scoped Entities</small>
+                        </div>
+                        <div className="card" style={{ background: '#f8fafc' }}>
+                          <h4>Your Drafts</h4>
+                          <p style={{ fontSize: '1.5rem' }}>{claims.filter(c => c.userId == user.id && c.claimStatus === CLAIM_STATUS.NEW).length || 0}</p>
+                        </div>
+                      </>
+                    );
+                  })()}
                   <div className="card" style={{ cursor: 'pointer', background: '#f0f9ff', border: '1px solid #bae6fd' }} onClick={() => setView('receipts-backlog')}>
                     <h4>Floating Receipts</h4>
                     <p style={{ fontSize: '1.5rem', color: 'var(--primary)', fontWeight: 'bold' }}>{receipts.length || 0}</p>
@@ -2792,11 +2871,25 @@ function App() {
 
         {view === 'my-claims' && !selectedClaim && (
           <div className="view">
-            <div className="header"><h2>My Expense Claims</h2><button className="btn btn-primary" onClick={() => setView('new-claim')}>+ Create New</button></div>
+            <div className="header">
+              <h2>My Expense Claims</h2>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 Search my claims..."
+                    style={{ padding: '0.5rem 1rem 0.5rem 2.2rem', borderRadius: '20px', border: '1px solid #e2e8f0', width: '250px', fontSize: '0.9rem' }}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                  <span style={{ position: 'absolute', left: '0.8rem', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }}></span>
+                </div>
+                <button className="btn btn-primary" onClick={() => setView('new-claim')}>+ Create New</button>
+              </div>
+            </div>
             <div className="card">
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr style={{ textAlign: 'left' }}><th>ID</th><th>Title</th><th>Total</th><th>Accountant</th><th>Claim Status</th><th>Approval</th><th>Action</th></tr></thead>
-                <tbody>{claims.filter(c => c.userId == user.id).map(c => (
+                <tbody>{claims.filter(c => c.userId == user.id && (searchTerm === '' || c.title.toLowerCase().includes(searchTerm.toLowerCase()) || c.id.toLowerCase().includes(searchTerm.toLowerCase()))).map(c => (
                   <tr key={c.id}>
                     <td style={{ padding: '1rem 0' }}><code style={{ fontSize: '0.75rem' }}>{c.id}</code></td>
                     <td>{c.title} {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>}</td>
@@ -2898,7 +2991,17 @@ function App() {
 
         {view === 'finance' && !selectedClaim && (
           <div className="view">
-            <div className="header"><h2>Finance Audit Portal</h2></div>
+            <div className="header">
+              <h2>Finance Audit Portal</h2>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Filter by Staff, Title, or ID..."
+                  style={{ padding: '0.5rem 1rem 0.5rem 2.2rem', borderRadius: '20px', border: '1px solid #e2e8f0', width: '300px', fontSize: '0.9rem' }}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
 
             {/* Entity Traffic Indicators (PRD 8.0) */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginTop: '1.5rem' }}>
@@ -2928,10 +3031,21 @@ function App() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr style={{ textAlign: 'left' }}><th>Staff</th><th>Approver</th><th>Accountant</th><th>Title</th><th>Claim Status</th><th>Action</th></tr></thead>
                 <tbody>{claims.filter(c => {
-                  if (user.roles.includes('ADMIN')) return true;
-                  const assigned = [String(user.entityId), ...(user.assignedEntities || []).filter(ae => ae).map(ae => String(ae))];
-                  const isScoped = assigned.includes(String(c.entityId));
-                  return isScoped && (c.claimStatus !== CLAIM_STATUS.NEW);
+                  if (user.roles.includes('ADMIN')) {
+                    // Admins see all for finance view
+                  } else {
+                    const assigned = [String(user.entityId), ...(user.assignedEntities || []).filter(ae => ae).map(ae => String(ae))];
+                    if (!assigned.includes(String(c.entityId))) return false;
+                  }
+
+                  if (c.claimStatus === CLAIM_STATUS.NEW && !user.roles.includes('ADMIN')) return false;
+
+                  const searchLower = searchTerm.toLowerCase();
+                  const staffName = users.find(u => u.id == c.userId)?.name || '';
+                  return searchTerm === '' ||
+                    c.title.toLowerCase().includes(searchLower) ||
+                    c.id.toLowerCase().includes(searchLower) ||
+                    staffName.toLowerCase().includes(searchLower);
                 }).map(c => (
                   <tr key={c.id}>
                     <td>{users.find(u => u.id == c.userId)?.name}</td>
@@ -2939,7 +3053,7 @@ function App() {
                     <td><small>{getAccountantsForEntity(c.entityId).map(a => a.name).join(', ') || 'Unassigned'}</small></td>
                     <td>{c.title} {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>}</td>
                     <td>{c.claimStatus}</td>
-                    <td><button className="btn btn-outline" onClick={() => setSelectedClaim({ ...c, isViewOnly: c.claimStatus === CLAIM_STATUS.CLOSED && !user.roles.includes('ADMIN') })}>Audit Detail</button></td>
+                    <td><button className="btn btn-outline" onClick={() => setSelectedClaim({ ...c, isViewOnly: (c.claimStatus === CLAIM_STATUS.CLOSED || c.claimStatus === CLAIM_STATUS.ACCRUED) && !user.roles.includes('ADMIN') })}>Audit Detail</button></td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -2951,8 +3065,18 @@ function App() {
           <div className="view">
             <div className="header">
               <h2>Approvals Center</h2>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button className={`btn btn-${view === 'approvals' ? 'primary' : 'outline'}`} onClick={() => setView('approvals')}>Queue</button>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type="text"
+                    placeholder="🔍 Filter by Staff or Title..."
+                    style={{ padding: '0.4rem 0.8rem 0.4rem 2rem', borderRadius: '15px', border: '1px solid #e2e8f0', width: '220px', fontSize: '0.85rem' }}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button className={`btn btn-${view === 'approvals' ? 'primary' : 'outline'}`} onClick={() => setView('approvals')}>Queue</button>
+                </div>
               </div>
             </div>
 
@@ -2960,7 +3084,16 @@ function App() {
               <div>
                 <h3>Pending Approvals</h3>
                 <div className="card" style={{ marginTop: '0.5rem' }}>
-                  {claims.filter(c => c.approvalStatus === APPROVAL_STATUS.PENDING && c.userId != user.id && c.approver_id == user.id).map(c => (
+                  {claims.filter(c => {
+                    const isPending = c.approvalStatus === APPROVAL_STATUS.PENDING && c.userId != user.id && c.approver_id == user.id;
+                    const searchLower = searchTerm.toLowerCase();
+                    const staffName = users.find(u => u.id == c.userId)?.name || '';
+                    const matchesSearch = searchTerm === '' ||
+                      c.title.toLowerCase().includes(searchLower) ||
+                      c.id.toLowerCase().includes(searchLower) ||
+                      staffName.toLowerCase().includes(searchLower);
+                    return isPending && matchesSearch;
+                  }).map(c => (
                     <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem 0', borderBottom: '1px solid #f0f0f0', alignItems: 'center' }}>
                       <div>
                         <code style={{ fontSize: '0.7rem', color: '#888', display: 'block', marginBottom: '4px' }}>{c.id}</code>
@@ -3093,6 +3226,16 @@ function App() {
                 })()}
               </div>
             </div>
+          </div>
+        )}
+        {globalLoadingMessage && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(255,255,255,0.8)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', zIndex: 9999, backdropFilter: 'blur(4px)' }}>
+            <div className="spinner" style={{ width: '50px', height: '50px', border: '5px solid #f3f3f3', borderTop: '5px solid var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: '1.5rem' }}></div>
+            <h3 style={{ color: 'var(--primary)', margin: 0 }}>{globalLoadingMessage}</h3>
+            <p style={{ color: '#666', marginTop: '0.5rem', fontSize: '0.9rem' }}>This usually takes 5-10 seconds...</p>
+            <style>{`
+              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            `}</style>
           </div>
         )}
       </main>
