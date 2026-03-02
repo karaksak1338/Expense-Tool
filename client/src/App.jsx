@@ -113,7 +113,10 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
           <div className={`nav-item ${currentView === 'admin' ? 'active' : ''}`} onClick={() => onViewChange('admin')}>⚙️ Control Center</div>
         )}
       </nav>
-      <div style={{ marginTop: 'auto' }}><button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button></div>
+      <div style={{ marginTop: 'auto' }}>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.4</div>
+        <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
+      </div>
     </aside>
   );
 };
@@ -2207,7 +2210,7 @@ function App() {
       const ENTITY_COLS = ['id', 'name', 'code', 'address', 'country', 'country_iso3', 'logo', 'mandatory_fields', 'expense_mappings', 'ai_enabled', 'duplicate_sensitivity', 'primary_currency', 'secondary_currency'];
       const EXPENSE_TYPE_COLS = ['id', 'label', 'default_account', 'default_vat', 'requires_entertainment'];
       const EXCHANGE_RATE_COLS = ['id', 'from_currency', 'to_currency', 'exchange_rate', 'rate_month', 'rate_year', 'rate_type', 'source', 'created_by'];
-      const AI_PROMPT_COLS = ['id', 'prompt_type', 'instructions', 'is_active', 'tokens_estimate'];
+      const AI_PROMPT_COLS = ['id', 'prompt_type', 'prompt_text', 'is_active', 'tokens_estimate'];
 
       const dbPayload = {};
 
@@ -2231,7 +2234,7 @@ function App() {
         };
         EXCHANGE_RATE_COLS.forEach(col => { if (mapped[col] !== undefined) dbPayload[col] = mapped[col]; });
       } else if (collection === 'ai_prompts') {
-        const mapped = { ...payload, prompt_type: payload.promptType, is_active: payload.isActive };
+        const mapped = { ...payload, prompt_type: payload.prompt_type || payload.promptType, is_active: payload.is_active !== undefined ? payload.is_active : payload.isActive };
         AI_PROMPT_COLS.forEach(col => { if (mapped[col] !== undefined) dbPayload[col] = mapped[col]; });
       } else {
         Object.assign(dbPayload, payload);
