@@ -114,7 +114,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0001</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0002</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -2576,7 +2576,12 @@ function App() {
 
       // Optimistic UI Update
       setReceipts(prev => [...prev, newReceipt]);
-      await supabase.from('receipts').insert(newReceipt);
+      const { error: insErr } = await supabase.from('receipts').insert(newReceipt);
+      if (insErr) {
+        console.error("Supabase Insert Error:", insErr);
+        // If we can't insert the initial record, we can't proceed with the AI update loop.
+        throw new Error(`Database connection failed: ${insErr.message}`);
+      }
 
       // 3. Call the Local Gemini AI Proxy
       let aiResult = null;
@@ -2710,7 +2715,10 @@ function App() {
         setSessionBlobMap(prev => ({ ...prev, [file.name]: { url: URL.createObjectURL(file), type: file.type } }));
       }
 
-      await supabase.from('receipts').update(updatePayload).eq('id', baseReceiptId);
+      const { error: updErr } = await supabase.from('receipts').update(updatePayload).eq('id', baseReceiptId);
+      if (updErr) {
+        console.warn("Final metadata update failed, but AI results are local:", updErr.message);
+      }
 
       // Update local state smoothly
       setReceipts(prev => prev.map(r => r.id === baseReceiptId ? { ...r, ...updatePayload } : r));
@@ -2719,6 +2727,7 @@ function App() {
       return { id: baseReceiptId, data: updatePayload };
     } catch (err) {
       console.error("Upload process failed catastrophically:", err);
+      alert(`Upload Failed: ${err.message || 'Check connection'}. If using a high-res image, try a smaller file (under 4MB).`);
       setGlobalLoadingMessage(null);
       return null;
     }
