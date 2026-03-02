@@ -1042,7 +1042,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
   );
 };
 
-const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
+const ImportPortal = ({ entities, user, expenseTypes, onImportComplete, setGlobalLoadingMessage }) => {
   const [step, setStep] = useState('upload');
   const [transactions, setTransactions] = useState([]);
   const [statementFile, setStatementFile] = useState(null);
@@ -1194,8 +1194,8 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
             <button className="btn btn-outline" onClick={() => {
               // Quick simulation option for internal testing
               setTransactions([
-                { id: 'TX-SIM-1', date: '2024-03-01', vendor: 'Shell Frankfurt', amount: 65.20, currency: 'EUR', suggestedType: 'Fuel' },
-                { id: 'TX-SIM-2', date: '2024-03-02', vendor: 'Lufthansa Airlines', amount: 320.00, currency: 'EUR', suggestedType: 'Flight' }
+                { id: 'TX-SIM-1', date: '2024-03-01', vendor: 'Shell Frankfurt', amount: 65.20, currency: 'EUR', billing_amount: 65.20, billing_currency: 'EUR', suggestedType: 'Fuel' },
+                { id: 'TX-SIM-2', date: '2024-03-02', vendor: 'Lufthansa Airlines', amount: 320.00, currency: 'EUR', billing_amount: 320.00, billing_currency: 'EUR', suggestedType: 'Flight' }
               ]);
               setStep('staging');
             }}>
@@ -2990,7 +2990,15 @@ function App() {
           />
         )}
 
-        {view === 'imports' && <ImportPortal entities={entities} user={user} expenseTypes={expenseTypes} onImportComplete={(draft) => { setImportedClaim(draft); setView('new-claim'); }} />}
+        {view === 'imports' && (
+          <ImportPortal
+            entities={entities}
+            user={user}
+            expenseTypes={expenseTypes}
+            setGlobalLoadingMessage={setGlobalLoadingMessage}
+            onImportComplete={(draft) => { setImportedClaim(draft); setView('new-claim'); }}
+          />
+        )}
 
         {view === 'finance' && !selectedClaim && (
           <div className="view">
