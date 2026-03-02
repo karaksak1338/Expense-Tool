@@ -114,7 +114,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0006</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0007</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -1075,7 +1075,9 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete, setGloba
       formData.append('allowedCategories', allowedCategories);
 
       const envProxy = import.meta.env.VITE_GEMINI_PROXY_URL || '';
-      const proxyBaseUrl = (envProxy.includes('your-gemini-proxy') || envProxy.includes('localhost:3001')) ? '' : envProxy;
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      // Only use relative URL if we are in production OR if the environment var is a known placeholder
+      const proxyBaseUrl = (envProxy.includes('your-gemini-proxy') || (!isLocalhost && envProxy.includes('localhost'))) ? '' : (envProxy || (isLocalhost ? 'http://localhost:3001' : ''));
       const response = await fetch(`${proxyBaseUrl}/api/extract-statement`, {
         method: 'POST',
         body: formData
@@ -2591,7 +2593,8 @@ function App() {
 
       try {
         const envProxy = import.meta.env.VITE_GEMINI_PROXY_URL || '';
-        const proxyBaseUrl = (envProxy.includes('your-gemini-proxy') || envProxy.includes('localhost:3001')) ? '' : envProxy;
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const proxyBaseUrl = (envProxy.includes('your-gemini-proxy') || (!isLocalhost && envProxy.includes('localhost'))) ? '' : (envProxy || (isLocalhost ? 'http://localhost:3001' : ''));
         const response = await fetch(`${proxyBaseUrl}/api/extract`, {
           method: 'POST',
           body: formData
