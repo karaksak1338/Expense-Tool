@@ -263,7 +263,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
       </div>
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         <div className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => onViewChange('dashboard')}>🏠 Dashboard</div>
-        {(hasRole('STAFF') || (hasRole('ACCOUNTANT') && !hasRole('ADMIN'))) && (
+        {hasRole('STAFF') && (
           <div className={`nav-item ${currentView === 'receipts-backlog' ? 'active' : ''}`} onClick={() => onViewChange('receipts-backlog')}>📚 Receipts Library</div>
         )}
         <div className={`nav-item ${currentView === 'settings' ? 'active' : ''}`} onClick={() => onViewChange('settings')}>⚙️ Settings</div>
@@ -1838,7 +1838,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
         <button className={`btn ${activeTab === 'departments' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('departments')}>Departments</button>
         <button className={`btn ${activeTab === 'expenseTypes' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('expenseTypes')}>Expense Categories</button>
         <button className={`btn ${activeTab === 'exchangeRates' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('exchangeRates')}>Exchange Rates</button>
-        <button className={`btn ${activeTab === 'aiPrompts' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('aiPrompts')}>AI Prompts</button>
+        {!isRestricted && <button className={`btn ${activeTab === 'aiPrompts' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('aiPrompts')}>AI Prompts</button>}
         <button className={`btn ${activeTab === 'approvers' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('approvers')}>Approver Policies</button>
       </div>
 
@@ -1857,7 +1857,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             {user.roles?.includes('ADMIN') && <button className="btn btn-outline" onClick={() => setShowBulkImport(true)}>📥 Bulk Import</button>}
             {activeTab === 'users' && <button className="btn btn-primary" onClick={() => setEditingItem({ type: 'user', isNew: true, roles: ['STAFF'] })}>+ Invite User</button>}
-            {activeTab !== 'users' && (!isRestricted || activeTab !== 'entities') && (
+            {activeTab !== 'users' && (!isRestricted || (activeTab !== 'entities' && activeTab !== 'aiPrompts')) && (
               <button className="btn btn-primary" onClick={() => {
                 const newItem = { isNew: true };
                 if (activeTab === 'entities') newItem.type = 'entity';
@@ -1881,7 +1881,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
               {activeTab === 'departments' && <><th>Department Name</th><th>Code</th></>}
               {activeTab === 'expenseTypes' && <><th>Category</th><th>G/L Account</th><th>VAT %</th></>}
               {activeTab === 'exchangeRates' && <><th>From Cur</th><th>To Cur</th><th>Rate multiplier</th><th>Period</th></>}
-              {activeTab === 'aiPrompts' && <><th>Prompt Type</th><th>Instructions Preview</th><th>Last Updated</th></>}
+              {activeTab === 'aiPrompts' && !isRestricted && <><th>Prompt Type</th><th>Instructions Preview</th><th>Last Updated</th></>}
               {activeTab === 'approvers' && <><th>Staff</th><th>Legal Entity</th><th>Approver</th><th>Accountant</th></>}
               <th>Actions</th>
             </tr>
@@ -1967,7 +1967,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                 </td>
               </tr>
             ))}
-            {activeTab === 'aiPrompts' && (aiPrompts || []).filter(p => (p.prompt_type || '').toLowerCase().includes(search.toLowerCase())).map(p => (
+            {activeTab === 'aiPrompts' && !isRestricted && (aiPrompts || []).filter(p => (p.prompt_type || '').toLowerCase().includes(search.toLowerCase())).map(p => (
               <tr key={p.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
                 <td><strong>{p.prompt_type}</strong></td>
                 <td><small style={{ color: '#555', display: 'block', maxWidth: '300px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.prompt_text}</small></td>
