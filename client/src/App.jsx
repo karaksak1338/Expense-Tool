@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0021</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0022</div>
       </div>
     </div>
   );
@@ -322,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0021</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0022</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -2898,32 +2898,41 @@ function App() {
       const actionText = isNew ? "Created"
         : (dbBase.claimStatus === CLAIM_STATUS.SUBMITTED ? "Submitted" : "Saved as Draft");
 
-      const { data: currentClaim } = await supabase.from('claims').select('history, approval_status, claim_status').eq('id', dbBase.id).single();
-      const newHistory = [...(currentClaim?.history || []), {
+      let currentClaimData = null;
+      try {
+        const { data } = await supabase.from('claims').select('history, approval_status, claim_status').eq('id', dbBase.id).maybeSingle();
+        currentClaimData = data;
+      } catch (err) {
+        console.warn("DEBUG: Could not fetch initial claim metadata (schema might be outdated):", err.message);
+      }
+
+      const newHistory = [...(currentClaimData?.history || []), {
         timestamp: new Date().toISOString(),
-        actorId: user.id,
-        actorName: user.name,
+        actorId: user.id || 'SYSTEM',
+        actorName: user.name || 'Unknown',
         action: actionText,
-        prevApprovalStatus: currentClaim?.approval_status || 'N/A',
-        prevClaimStatus: currentClaim?.claim_status || 'NEW',
-        newApprovalStatus: dbBase.approvalStatus || 'N/A',
-        newClaimStatus: dbBase.claimStatus || 'NEW'
+        prevApprovalStatus: currentClaimData?.approval_status || 'N/A',
+        prevClaimStatus: currentClaimData?.claim_status || 'NEW',
+        newApprovalStatus: dbBase.approval_status || dbBase.approvalStatus || 'N/A',
+        newClaimStatus: dbBase.claim_status || dbBase.claimStatus || 'NEW'
       }];
+
+      const finalCurrency = claimData.currency || (expenses && expenses[0]?.currency) || 'EUR';
 
       const safeClaim = {
         id: dbBase.id,
-        title: dbBase.title,
+        title: dbBase.title || 'Untitled Claim',
         user_id: dbBase.user_id || user.id,
-        entity_id: dbBase.entity_id,
-        approver_id: dbBase.approver_id,
-        currency: claimData.currency || (expenses && expenses[0]?.currency) || 'EUR',
+        entity_id: dbBase.entity_id || null,
+        approver_id: dbBase.approver_id || null,
+        currency: finalCurrency,
         advance_amount: Number(dbBase.advance_amount) || 0,
-        claim_status: dbBase.claim_status,
-        approval_status: dbBase.approval_status,
+        claim_status: dbBase.claim_status || CLAIM_STATUS.NEW,
+        approval_status: dbBase.approval_status || APPROVAL_STATUS.NA,
         claim_type: claimData.claim_type || 'CashReimbursement',
         statement_attachment: claimData.statement_attachment || null,
         import_batch_id: claimData.import_batch_id || null,
-        submission_date: dbBase.claim_status === CLAIM_STATUS.SUBMITTED ? new Date().toISOString() : (dbBase.submission_date ? new Date(dbBase.submission_date).toISOString() : null),
+        submission_date: dbBase.claim_status === CLAIM_STATUS.SUBMITTED ? new Date().toISOString() : (dbBase.submission_date || null),
         history: newHistory
       };
 
