@@ -57,7 +57,7 @@ app.post('/api/extract-statement', upload.single('statement'), async (req, res) 
         4. Output MUST be a single JSON object containing a 'transactions' array.`;
 
         try {
-            const { data: prompts } = await supabase.from('ai_prompts').select('prompt_text').eq('prompt_type', 'statement').single();
+            const { data: prompts } = await supabase.from('ai_prompts').select('prompt_text').eq('prompt_type', 'bank_statement').single();
             if (prompts && prompts.prompt_text) {
                 promptTemplate = prompts.prompt_text;
             }

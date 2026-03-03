@@ -68,8 +68,20 @@ const LoginPage = ({ onLogin }) => {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg-main)', padding: '2rem' }}>
       <div className="card" style={{ width: '400px', textAlign: 'center', padding: '2.5rem' }}>
-        <h1 style={{ marginBottom: '0.5rem' }}>DCBI Expense Tool</h1>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>{isResettingPassword ? 'Reset Your Password' : 'Secure Sign In'}</p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '0.5rem' }}>
+          {/* Recreated Logo from Image */}
+          <div style={{ position: 'relative', width: '48px', height: '48px', background: '#0071bc', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '24px', flexShrink: 0 }}>
+            DC
+            <div style={{ position: 'absolute', bottom: '-4px', right: '-4px', width: '22px', height: '22px', background: '#475569', borderRadius: '50%', border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>
+              BI
+            </div>
+          </div>
+          <div style={{ textAlign: 'left', lineHeight: '1' }}>
+            <div style={{ fontSize: '24px', fontWeight: '300', color: '#0071bc', fontFamily: 'Inter, sans-serif' }}>datacair</div>
+            <div style={{ fontSize: '20px', fontWeight: '400', color: '#444', letterSpacing: '0.5px', fontFamily: 'Inter, sans-serif' }}>BUSINESS INTELLIGENCE</div>
+          </div>
+        </div>
+        <h2 style={{ fontSize: '1.25rem', color: '#64748b', fontWeight: '400', marginBottom: '2rem' }}>Expense Tool</h2>
 
         {error && <div style={{ background: '#fee2e2', color: '#b91c1c', padding: '0.75rem', borderRadius: '6px', marginBottom: '1.5rem', fontSize: '0.9rem' }}>{error}</div>}
         {message && <div style={{ background: '#dcfce7', color: '#15803d', padding: '0.75rem', borderRadius: '6px', marginBottom: '1.5rem', fontSize: '0.9rem' }}>{message}</div>}
@@ -105,7 +117,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0014</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0015</div>
       </div>
     </div>
   );
@@ -281,7 +293,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0014</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0015</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>

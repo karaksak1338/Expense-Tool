@@ -66,7 +66,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         2. If the VAT % is not clearly visible or stated, leave 'vat_percentage' as null.`;
 
         try {
-            const { data: prompts } = await supabase.from('ai_prompts').select('prompt_text').eq('prompt_type', 'receipt').single();
+            const { data: prompts } = await supabase.from('ai_prompts').select('prompt_text').eq('prompt_type', 'receipts').single();
             if (prompts && prompts.prompt_text) {
                 promptTemplate = prompts.prompt_text;
             }
