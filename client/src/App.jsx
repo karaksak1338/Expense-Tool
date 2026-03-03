@@ -192,7 +192,7 @@ const SettingsView = ({ user, entities, users, userEntityApprovers, onBack }) =>
                       <strong>{entities.find(e => e.id === user.entityId)?.name || 'Primary Entity'}</strong>
                       <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 'bold' }}>(PRIMARY)</span>
                     </td>
-                    <td>{users.find(u => u.id === user.approverId)?.name || 'Default / None'}</td>
+                    <td>{users.find(u => String(u.id) === String(user.approverId))?.name || 'Default / None'}</td>
                     <td>{user.roles?.includes('ACCOUNTANT') ? '✅ Yes' : '—'}</td>
                   </tr>
                 )}
@@ -201,7 +201,7 @@ const SettingsView = ({ user, entities, users, userEntityApprovers, onBack }) =>
                 {userEntries.filter(ua => ua.entity_id !== user.entityId).map(ua => (
                   <tr key={ua.entity_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
                     <td style={{ padding: '0.75rem 0' }}>{entities.find(e => e.id === ua.entity_id)?.name || ua.entity_id}</td>
-                    <td>{users.find(u => u.id === ua.approver_id)?.name || 'None'}</td>
+                    <td>{users.find(u => String(u.id) === String(ua.approver_id))?.name || 'None'}</td>
                     <td>{ua.is_accountant ? '✅ Yes' : '—'}</td>
                   </tr>
                 ))}
@@ -249,14 +249,15 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
   const hasRole = (role) => user.roles.includes(role);
 
   const primaryApproverId = user.approverId || user.assignedEntities?.[0]?.approverId;
-  const primaryApprover = users?.find(u => u.id === primaryApproverId);
-  const approverName = primaryApprover ? primaryApprover.name : (primaryApproverId || 'N/A');
+  const primaryApprover = users?.find(u => String(u.id) === String(primaryApproverId));
+  const approverName = primaryApprover ? primaryApprover.name : (primaryApproverId && primaryApproverId !== 'N/A' ? 'Searching...' : 'N/A');
 
   return (
     <aside className="sidebar">
       <div>
         <h1 style={{ fontSize: '1.2rem', color: 'var(--primary)', marginBottom: '0.5rem' }}>DCBI Tool</h1>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0 0 0.2rem 0' }}>Operator: <strong>{user.name}</strong></p>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0 0 0.2rem 0' }}>Email: <strong>{user.email}</strong></p>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0 0 0.2rem 0' }}>Role: <strong>{user.roles?.join(', ')}</strong></p>
         <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: '0' }}>Approver: <strong>{approverName}</strong></p>
       </div>
