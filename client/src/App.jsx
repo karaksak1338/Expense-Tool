@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0023</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0024</div>
       </div>
     </div>
   );
@@ -322,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0023</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0024</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -2976,10 +2976,17 @@ function App() {
 
       let currentClaimData = null;
       try {
-        const { data } = await supabase.from('claims').select('history, approval_status, claim_status').eq('id', dbBase.id).maybeSingle();
+        // IMPORTANT: Use maybeSingle() to avoid 406 Not Acceptable if record doesn't exist yet
+        const { data, error: fetchErr } = await supabase
+          .from('claims')
+          .select('history, approval_status, claim_status')
+          .eq('id', dbBase.id)
+          .maybeSingle();
+
+        if (fetchErr) console.warn("DEBUG: Metadata fetch warning (safe to ignore for new claims):", fetchErr.message);
         currentClaimData = data;
       } catch (err) {
-        console.warn("DEBUG: Could not fetch initial claim metadata (schema might be outdated):", err.message);
+        console.warn("DEBUG: Could not fetch initial claim metadata:", err.message);
       }
 
       const newHistory = [...(currentClaimData?.history || []), {
