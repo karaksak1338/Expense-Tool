@@ -4,6 +4,7 @@ import cors from 'cors';
 import createUserHandler from './create-user.js';
 import extractApp from './extract.js';
 import extractStatementApp from './extract-statement.js';
+import bulkImportHandler from './bulk-import.js';
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use((req, res, next) => {
 
 // 1. Mount create-user (Vercel function)
 app.post('/api/create-user', createUserHandler);
+app.post('/api/bulk-import', bulkImportHandler);
 
 // 2. Mount extract apps (Internal Express apps)
 // Note: These internal apps already have '/api/extract' etc. defined in their routes
@@ -31,4 +33,5 @@ app.listen(PORT, () => {
     console.log(`- POST /api/create-user`);
     console.log(`- POST /api/extract`);
     console.log(`- POST /api/extract-statement`);
+    console.log(`- POST /api/bulk-import`);
 });

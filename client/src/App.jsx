@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from './lib/supabase';
+import Papa from 'papaparse';
 
 // --- INITIAL MOCK DATA ---
 
@@ -1605,10 +1606,154 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
   );
 };
 
-const AdminCenter = ({ user, entities, users, projects, departments, expenseTypes, exchangeRates, userEntityApprovers, aiPrompts, onSave, onDeleteItem }) => {
+const BulkImportModal = ({ isOpen, onClose, targetTable, onImportSuccess }) => {
+  const [file, setFile] = useState(null);
+  const [csvData, setCsvData] = useState([]);
+  const [headers, setHeaders] = useState([]);
+  const [mapping, setMapping] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  const tableFields = {
+    entities: ['name', 'code', 'address', 'country', 'country_iso3', 'logo', 'primary_currency', 'secondary_currency'],
+    users: ['name', 'email', 'roles', 'entity_id', 'approver_id'],
+    projects: ['name', 'code'],
+    departments: ['name', 'code'],
+    expense_types: ['label', 'default_account', 'default_vat', 'requires_entertainment'],
+    exchange_rates: ['from_currency', 'to_currency', 'exchange_rate', 'rate_month', 'rate_year'],
+    ai_prompts: ['prompt_type', 'prompt_text', 'is_active'],
+    user_entity_approvers: ['user_id', 'entity_id', 'approver_id', 'is_accountant']
+  };
+
+  const currentFields = tableFields[targetTable] || [];
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (!selectedFile) return;
+    setFile(selectedFile);
+
+    Papa.parse(selectedFile, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        setCsvData(results.data);
+        if (results.data.length > 0) {
+          const csvHeaders = Object.keys(results.data[0]);
+          setHeaders(csvHeaders);
+
+          // Auto-mapping logic
+          const newMapping = {};
+          currentFields.forEach(field => {
+            const match = csvHeaders.find(h => h.toLowerCase().replace(/_|\s/g, '') === field.toLowerCase().replace(/_|\s/g, ''));
+            if (match) newMapping[field] = match;
+          });
+          setMapping(newMapping);
+        }
+      }
+    });
+  };
+
+  const handleImport = async () => {
+    setLoading(true);
+    try {
+      const mappedData = csvData.map(row => {
+        const item = {};
+        Object.entries(mapping).forEach(([dbField, csvHeader]) => {
+          if (csvHeader) item[dbField] = row[csvHeader];
+        });
+        return item;
+      });
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/bulk-import', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ table: targetTable, data: mappedData })
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+
+      alert(`Import Successful! ${result.imported} records added.${result.failed > 0 ? ` (${result.failed} failed)` : ''}`);
+      onImportSuccess();
+      onClose();
+    } catch (err) {
+      alert('Import failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 3000 }}>
+      <div className="card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', padding: '2rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <h2>Bulk Import: {targetTable.replace('_', ' ')}</h2>
+          <button className="btn btn-outline" onClick={onClose}>✕</button>
+        </div>
+
+        {!file ? (
+          <div style={{ padding: '3rem', border: '2px dashed #ddd', borderRadius: '8px', textAlign: 'center' }}>
+            <p>Select a CSV file to begin migration</p>
+            <input type="file" accept=".csv" onChange={handleFileChange} style={{ marginTop: '1rem' }} />
+          </div>
+        ) : (
+          <div>
+            <h3>Map Columns</h3>
+            <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1rem' }}>Match your CSV columns to the database fields.</p>
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1.5rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '1px solid #eee' }}>
+                  <th style={{ padding: '0.5rem 0' }}>Database Field</th>
+                  <th>CSV Column</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentFields.map(field => (
+                  <tr key={field} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                    <td style={{ padding: '0.5rem 0' }}><code>{field}</code></td>
+                    <td>
+                      <select
+                        value={mapping[field] || ''}
+                        onChange={e => setMapping({ ...mapping, [field]: e.target.value })}
+                        style={{ width: '100%', padding: '0.4rem' }}
+                      >
+                        <option value="">(Don't import)</option>
+                        {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ background: '#f8fafc', padding: '1rem', borderRadius: '6px', marginBottom: '1.5rem' }}>
+              <p style={{ margin: 0, fontSize: '0.85rem' }}>Rows detected: <strong>{csvData.length}</strong></p>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleImport} disabled={loading || csvData.length === 0}>
+                {loading ? 'Importing...' : `Import ${csvData.length} Records`}
+              </button>
+              <button className="btn btn-outline" onClick={() => setFile(null)}>Reset</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const AdminCenter = ({ user, entities, users, projects, departments, expenseTypes, exchangeRates, userEntityApprovers, aiPrompts, onSave, onDeleteItem, fetchGlobalData }) => {
   const [activeTab, setActiveTab] = useState('entities');
   const [editingItem, setEditingItem] = useState(null);
   const [search, setSearch] = useState('');
+  const [showBulkImport, setShowBulkImport] = useState(false);
 
   const getAccountantsForEntity = (entityId) => {
     return users.filter(u =>
@@ -1709,6 +1854,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
             />
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-outline" onClick={() => setShowBulkImport(true)}>📥 Bulk Import</button>
             {activeTab === 'users' && <button className="btn btn-primary" onClick={() => setEditingItem({ type: 'user', isNew: true, roles: ['STAFF'] })}>+ Invite User</button>}
             {activeTab !== 'users' && (!isRestricted || activeTab !== 'entities') && (
               <button className="btn btn-primary" onClick={() => {
@@ -2203,6 +2349,12 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
           </div>
         </div>
       )}
+      <BulkImportModal
+        isOpen={showBulkImport}
+        onClose={() => setShowBulkImport(false)}
+        targetTable={activeTab === 'approvers' ? 'user_entity_approvers' : (collectionMap[activeTab.slice(0, -1)] || activeTab)}
+        onImportSuccess={fetchGlobalData}
+      />
     </div>
   );
 };
@@ -3528,6 +3680,7 @@ function App() {
             aiPrompts={aiPrompts}
             onSave={handleSaveAdminItem}
             onDeleteItem={handleDeleteAdminItem}
+            fetchGlobalData={fetchGlobalData}
           />
         )}
 
