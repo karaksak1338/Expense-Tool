@@ -224,7 +224,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0011</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0012</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -1570,25 +1570,58 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
   };
 
   const AVAILABLE_ROLES = ['STAFF', 'MANAGER', 'ACCOUNTANT', 'ADMIN'];
+  const collectionMap = {
+    entity: 'entities',
+    user: 'users',
+    project: 'projects',
+    department: 'departments',
+    expenseType: 'expense_types',
+    exchangeRate: 'exchange_rates',
+    aiPrompt: 'ai_prompts'
+  };
 
   const handleSave = async () => {
     let collection = '';
     if (editingItem.type === 'entity') collection = 'entities';
-    else if (editingItem.type === 'user') collection = 'users';
-    else if (editingItem.type === 'project') collection = 'projects';
-    else if (editingItem.type === 'department') collection = 'departments';
-    else if (editingItem.type === 'expenseType') collection = 'expense_types';
-    else if (editingItem.type === 'exchangeRate') collection = 'exchange_rates';
-    else if (editingItem.type === 'aiPrompt') collection = 'ai_prompts';
-
-    await onSave(collection, editingItem);
+    if (editingItem.type === 'user' && editingItem.isNew) {
+      // Use the new Admin API for invitations
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await fetch('/api/create-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            email: editingItem.email,
+            name: editingItem.name,
+            roles: editingItem.roles,
+            entityId: editingItem.entityId,
+            approverId: editingItem.approverId,
+            assignedEntities: editingItem.assignedEntities || []
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        alert('User invited successfully! They can now log in with the default password.');
+        onSave('users', { ...editingItem, id: result.user.id });
+        setEditingItem(null);
+      } catch (err) {
+        alert('Invite failed: ' + err.message);
+      }
+      return;
+    }
+    onSave(collectionMap[editingItem.type], editingItem);
     setEditingItem(null);
   };
 
-  const filtered = (list) => list.filter(item =>
-    (item.name || item.label || item.title || '').toLowerCase().includes(search.toLowerCase()) ||
-    (item.email || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = (list) => {
+    return (list || []).filter(item =>
+      (item.name || item.label || item.title || '').toLowerCase().includes(search.toLowerCase()) ||
+      (item.email || '').toLowerCase().includes(search.toLowerCase())
+    );
+  };
 
   return (
     <div className="view">
@@ -1616,19 +1649,21 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
               style={{ padding: '0.4rem 0.8rem', borderRadius: '4px', border: '1px solid #ddd', width: '250px' }}
             />
           </div>
-          {(!isRestricted || activeTab !== 'entities') && (
-            <button className="btn btn-primary" onClick={() => {
-              const newItem = { isNew: true };
-              if (activeTab === 'entities') newItem.type = 'entity';
-              else if (activeTab === 'users') newItem.type = 'user';
-              else if (activeTab === 'projects') newItem.type = 'project';
-              else if (activeTab === 'departments') newItem.type = 'department';
-              else if (activeTab === 'expenseTypes') newItem.type = 'expenseType';
-              else if (activeTab === 'exchangeRates') newItem.type = 'exchangeRate';
-              else if (activeTab === 'aiPrompts') newItem.type = 'aiPrompt';
-              setEditingItem(newItem);
-            }}>+ Add {activeTab === 'entities' ? 'Entity' : activeTab === 'expenseTypes' ? 'Category' : activeTab === 'exchangeRates' ? 'Rate' : activeTab === 'aiPrompts' ? 'Prompt' : activeTab.slice(0, -1)}</button>
-          )}
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {activeTab === 'users' && <button className="btn btn-primary" onClick={() => setEditingItem({ type: 'user', isNew: true, roles: ['STAFF'] })}>+ Invite User</button>}
+            {activeTab !== 'users' && (!isRestricted || activeTab !== 'entities') && (
+              <button className="btn btn-primary" onClick={() => {
+                const newItem = { isNew: true };
+                if (activeTab === 'entities') newItem.type = 'entity';
+                else if (activeTab === 'projects') newItem.type = 'project';
+                else if (activeTab === 'departments') newItem.type = 'department';
+                else if (activeTab === 'expenseTypes') newItem.type = 'expenseType';
+                else if (activeTab === 'exchangeRates') newItem.type = 'exchangeRate';
+                else if (activeTab === 'aiPrompts') newItem.type = 'aiPrompt';
+                setEditingItem(newItem);
+              }}>+ Add {activeTab === 'entities' ? 'Entity' : activeTab === 'expenseTypes' ? 'Category' : activeTab === 'exchangeRates' ? 'Rate' : activeTab === 'aiPrompts' ? 'Prompt' : activeTab.slice(0, -1)}</button>
+            )}
+          </div>
         </div>
 
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1654,7 +1689,11 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                 <td>
                   {(() => {
                     const accs = getAccountantsForEntity(e.id);
-                    if (accs.length === 0) return <span style={{ color: '#9ca3af', fontSize: '0.8rem', fontStyle: 'italic' }}>No Accountant Assigned</span>;
+                    if (accs.length === 0) return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#f59e0b', fontSize: '0.8rem', fontStyle: 'italic' }}>
+                        <span>⚠️ No Accountant Assigned</span>
+                      </div>
+                    );
                     return (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                         {accs.map(a => (
@@ -1767,12 +1806,16 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                     <div className="form-group"><label>Country</label><input disabled={isRestricted && editingItem.type === 'entity'} value={editingItem.country || ''} onChange={e => setEditingItem({ ...editingItem, country: e.target.value })} /></div>
                     <div className="form-group"><label>Country ISO3</label><input disabled={isRestricted && editingItem.type === 'entity'} value={editingItem.countryIso3 || ''} onChange={e => setEditingItem({ ...editingItem, countryIso3: e.target.value })} /></div>
                   </div>
-                  <div className="form-group" style={{ background: '#f0f9ff', padding: '0.75rem', borderRadius: '4px', border: '1px solid #bae6fd' }}>
-                    <label style={{ fontWeight: 'bold', color: '#0369a1', fontSize: '0.85rem' }}>Assigned Accountants</label>
+                  <div className="form-group" style={{ background: '#fff9eb', padding: '0.75rem', borderRadius: '4px', border: '1px solid #fef3c7' }}>
+                    <label style={{ fontWeight: 'bold', color: '#b45309', fontSize: '0.85rem' }}>Assigned Accountants</label>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '0.4rem' }}>
                       {(() => {
                         const accs = users.filter(u => u.roles?.includes('ACCOUNTANT') && (String(u.entityId) === String(editingItem.id) || (Array.isArray(u.assignedEntities) && u.assignedEntities.some(ae => String(ae) === String(editingItem.id)))));
-                        if (accs.length === 0) return <span style={{ fontSize: '0.8rem', color: '#64748b', fontStyle: 'italic' }}>No accountants assigned to this entity.</span>;
+                        if (accs.length === 0) return (
+                          <div style={{ color: '#b45309', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>⚠️ <strong>Warning:</strong> No accountants assigned. Finance audit will not be possible for this entity.</span>
+                          </div>
+                        );
                         return accs.map(a => <span key={a.id} className="badge" style={{ background: '#fff', color: '#0369a1', border: '1px solid #bae6fd' }}>👤 {a.name}</span>);
                       })()}
                     </div>
@@ -2084,6 +2127,13 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
 // --- MAIN APP ---
 
 function App() {
+  const fetchWithTimeout = (promise, ms) => {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('TIMEOUT_EXCEEDED')), ms);
+      promise.then(res => { clearTimeout(timer); resolve(res); }).catch(err => { clearTimeout(timer); reject(err); });
+    });
+  };
+
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem('expenseApp_user');
     return savedUser ? JSON.parse(savedUser) : null;
@@ -2155,49 +2205,94 @@ function App() {
   }, [users, user?.id]);
 
   useEffect(() => {
-    // 1. Initial Session Check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) {
-        setUser(null);
-        return;
-      }
-      localStorage.setItem('expenseApp_user', JSON.stringify({ email: session.user.email, id: session.user.id }));
-    });
-
-    // 2. Auth State Listener
+    // Standardized Listener for Auth State
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log(`DEBUG: Auth Event: ${event}`, session?.user?.email);
-      try {
-        if (session) {
-          // Sync user state from our public 'users' table
-          const { data: appUser } = await supabase.from('users').select('*').eq('email', session.user.email).single();
-          if (appUser) {
-            const fresh = { ...appUser, entityId: appUser.entity_id, approverId: appUser.approver_id, assignedEntities: appUser.assigned_entities || [] };
-            setUser(fresh);
-            localStorage.setItem('expenseApp_user', JSON.stringify(fresh));
-          } else {
-            console.warn("DEBUG: User in Auth but not in public.users table:", session.user.email);
-            // Fallback if user is in Auth but not in public table yet
-            const temp = { email: session.user.email, name: session.user.email.split('@')[0], roles: ['STAFF'] };
-            setUser(temp);
-          }
-        } else {
-          setUser(null);
-          localStorage.removeItem('expenseApp_user');
-        }
-      } catch (authListenerErr) {
-        console.error("DEBUG: Auth Listener Error:", authListenerErr);
-      }
+      syncUserFromSession(session, event);
     });
 
-    // Ensure all paths resolve to root for this SPA
+    // Check Initial Session once
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) syncUserFromSession(session, 'INITIAL_LOAD');
+      else setUser(null);
+    });
+
+    // SPA routing safety
     if (window.location.pathname !== '/' && window.location.pathname !== '/index.html') {
       window.history.replaceState({}, '', '/');
     }
     fetchGlobalData();
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
+
+  const syncUserFromSession = async (session, event) => {
+    if (!session) {
+      setUser(null);
+      localStorage.removeItem('expenseApp_user');
+      return;
+    }
+
+    try {
+      console.log(`DEBUG: Syncing user for session (${event}):`, session.user.email);
+
+      let appUser = null;
+      let fetchWorked = false;
+
+      try {
+        const { data, error: appUserErr } = await fetchWithTimeout(
+          supabase.from('users').select('*').ilike('email', session.user.email).single(),
+          5000
+        );
+        if (data) {
+          appUser = data;
+          fetchWorked = true;
+          console.log("DEBUG: appUser fetch: SUCCESS", appUser.email);
+        } else {
+          console.log("DEBUG: appUser fetch: NOT FOUND IN DB", appUserErr?.message || "");
+        }
+      } catch (err) {
+        console.warn("DEBUG: appUser fetch: TIMEOUT or FAILURE", err.message);
+      }
+
+      const isMaster = session.user.email === 'wfciadminsk@dcbi.aero';
+
+      if (fetchWorked && appUser) {
+        const fresh = { ...appUser, entityId: appUser.entity_id, approverId: appUser.approver_id, assignedEntities: appUser.assigned_entities || [] };
+        console.log("DEBUG: Setting finalized user state.");
+        setUser(fresh);
+        localStorage.setItem('expenseApp_user', JSON.stringify(fresh));
+      } else {
+        console.log("DEBUG: Bootstrapping temporary state. Master Admin:", isMaster);
+        const temp = {
+          email: session.user.email,
+          id: session.user.id,
+          name: session.user.email.split('@')[0],
+          roles: isMaster ? ['ADMIN', 'STAFF'] : ['STAFF'],
+          entityId: null,
+          assignedEntities: []
+        };
+        setUser(temp);
+
+        if (isMaster && !fetchWorked) {
+          // Provision Master Admin in background if missing
+          supabase.from('users').insert({
+            id: session.user.id,
+            email: session.user.email,
+            name: 'Master Admin',
+            roles: ['ADMIN', 'STAFF']
+          }).then(({ error }) => {
+            if (!error) console.log("DEBUG: Master Admin auto-provisioned successfully.");
+            else console.warn("DEBUG: Master Admin auto-provisioning failed (may already exist):", error.message);
+          });
+        }
+      }
+    } catch (err) {
+      console.error("DEBUG: syncUserFromSession failed:", err);
+    }
+  };
 
   useEffect(() => {
     let claimsSub;
@@ -2223,6 +2318,7 @@ function App() {
   }, [user, userEntityApprovers]);
 
   const fetchGlobalData = async () => {
+    console.log("DEBUG: fetchGlobalData starting...");
     try {
       const [eRes, uRes, pRes, dRes, tRes, ueaRes, xRes, apRes] = await Promise.all([
         supabase.from('entities').select('*'),
@@ -2234,6 +2330,7 @@ function App() {
         supabase.from('exchange_rates').select('*'),
         supabase.from('ai_prompts').select('*')
       ]);
+      console.log("DEBUG: fetchGlobalData Promise.all resolved.");
 
       const errors = [eRes.error, uRes.error, pRes.error, dRes.error, tRes.error, ueaRes.error, xRes.error, apRes.error].filter(Boolean);
       if (errors.length > 0) {
