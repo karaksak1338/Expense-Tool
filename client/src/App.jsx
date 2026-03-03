@@ -113,7 +113,7 @@ const LoginPage = ({ onLogin }) => {
   );
 };
 
-const SettingsView = ({ user, onBack }) => {
+const SettingsView = ({ user, entities, users, userEntityApprovers, onBack }) => {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -138,6 +138,8 @@ const SettingsView = ({ user, onBack }) => {
     }
   };
 
+  const userEntries = userEntityApprovers.filter(ua => ua.user_id === user.id);
+
   return (
     <div className="view">
       <div className="header">
@@ -148,16 +150,72 @@ const SettingsView = ({ user, onBack }) => {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem', marginTop: '2rem' }}>
-        <div className="card">
-          <h3>Profile Information</h3>
-          <div style={{ marginTop: '1.5rem' }}>
-            <p><strong>Name:</strong> {user.name}</p>
-            <p><strong>Email:</strong> {user.email}</p>
-            <p><strong>Primary Role:</strong> {user.roles?.join(', ')}</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          <div className="card">
+            <h3>Profile Information</h3>
+            <div style={{ marginTop: '1.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#666' }}>Display Name</label>
+                <p style={{ margin: '4px 0 0 0', fontWeight: '500' }}>{user.name}</p>
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#666' }}>Email Address</label>
+                <p style={{ margin: '4px 0 0 0', fontWeight: '500' }}>{user.email}</p>
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', color: '#666' }}>System Roles</label>
+                <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                  {user.roles?.map(r => <span key={r} className="badge" style={{ fontSize: '0.7rem' }}>{r}</span>)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <h3>Entity & Approval Configuration</h3>
+            <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1.5rem' }}>Your assigned entities and designated approvers.</p>
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', borderBottom: '2px solid #eee' }}>
+                  <th style={{ padding: '0.75rem 0' }}>Legal Entity</th>
+                  <th>My Approver</th>
+                  <th>Accountant?</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Primary Entity */}
+                {user.entityId && (
+                  <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '0.75rem 0' }}>
+                      <strong>{entities.find(e => e.id === user.entityId)?.name || 'Primary Entity'}</strong>
+                      <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 'bold' }}>(PRIMARY)</span>
+                    </td>
+                    <td>{users.find(u => u.id === user.approverId)?.name || 'Default / None'}</td>
+                    <td>{user.roles?.includes('ACCOUNTANT') ? '✅ Yes' : '—'}</td>
+                  </tr>
+                )}
+
+                {/* Secondary Entities from Mappings */}
+                {userEntries.filter(ua => ua.entity_id !== user.entityId).map(ua => (
+                  <tr key={ua.entity_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '0.75rem 0' }}>{entities.find(e => e.id === ua.entity_id)?.name || ua.entity_id}</td>
+                    <td>{users.find(u => u.id === ua.approver_id)?.name || 'None'}</td>
+                    <td>{ua.is_accountant ? '✅ Yes' : '—'}</td>
+                  </tr>
+                ))}
+
+                {userEntries.length === 0 && !user.entityId && (
+                  <tr>
+                    <td colSpan="3" style={{ textAlign: 'center', padding: '2rem', color: '#999', fontStyle: 'italic' }}>No entities assigned yet.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <div className="card">
+        <div className="card" style={{ alignSelf: 'start' }}>
           <h3>Security</h3>
           <p style={{ fontSize: '0.85rem', color: '#666', marginBottom: '1.5rem' }}>Update your account password below.</p>
 
@@ -1635,6 +1693,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
         <button className={`btn ${activeTab === 'expenseTypes' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('expenseTypes')}>Expense Categories</button>
         <button className={`btn ${activeTab === 'exchangeRates' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('exchangeRates')}>Exchange Rates</button>
         <button className={`btn ${activeTab === 'aiPrompts' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('aiPrompts')}>AI Prompts</button>
+        <button className={`btn ${activeTab === 'approvers' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('approvers')}>Approver Policies</button>
       </div>
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>
@@ -1676,6 +1735,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
               {activeTab === 'expenseTypes' && <><th>Category</th><th>G/L Account</th><th>VAT %</th></>}
               {activeTab === 'exchangeRates' && <><th>From Cur</th><th>To Cur</th><th>Rate multiplier</th><th>Period</th></>}
               {activeTab === 'aiPrompts' && <><th>Prompt Type</th><th>Instructions Preview</th><th>Last Updated</th></>}
+              {activeTab === 'approvers' && <><th>Staff</th><th>Legal Entity</th><th>Approver</th><th>Accountant</th></>}
               <th>Actions</th>
             </tr>
           </thead>
@@ -1773,6 +1833,29 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                 </td>
               </tr>
             ))}
+            {activeTab === 'approvers' && (userEntityApprovers || []).map(ua => {
+              const u = users.find(usr => usr.id === ua.user_id);
+              const ent = entities.find(e => e.id === ua.entity_id);
+              const appr = users.find(usr => usr.id === ua.approver_id);
+              const searchLower = search.toLowerCase();
+              if (search && !(
+                (u?.name || '').toLowerCase().includes(searchLower) ||
+                (ent?.name || '').toLowerCase().includes(searchLower) ||
+                (appr?.name || '').toLowerCase().includes(searchLower)
+              )) return null;
+
+              return (
+                <tr key={ua.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
+                  <td style={{ padding: '1rem 0' }}>{u?.name || 'Unknown User'}</td>
+                  <td>{ent?.name || 'Unknown Entity'}</td>
+                  <td>{appr?.name || 'None'}</td>
+                  <td>{ua.is_accountant ? '✅ Yes' : '—'}</td>
+                  <td>
+                    <button className="btn btn-outline" style={{ color: 'var(--error)' }} onClick={() => onDeleteItem('user_entity_approvers', ua.id)}>Delete</button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -3329,6 +3412,16 @@ function App() {
               </table>
             </div>
           </div>
+        )}
+
+        {view === 'settings' && (
+          <SettingsView
+            user={user}
+            entities={entities}
+            users={users}
+            userEntityApprovers={userEntityApprovers}
+            onBack={() => setView('dashboard')}
+          />
         )}
 
         {view === 'approvals' && !selectedClaim && (
