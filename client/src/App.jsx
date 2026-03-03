@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0016</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0018</div>
       </div>
     </div>
   );
@@ -322,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0016</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0018</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -1499,23 +1499,12 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
     const files = Array.from(e.target.files);
     if (files.length > 0) {
       for (const file of files) {
-        // Cache file locally for preview
-        const reader = new FileReader();
-        await new Promise((resolve) => {
-          reader.onload = async (ev) => {
-            localStorage.setItem(`receipt_blob_${file.name}`, ev.target.result);
-            if (onUploadReceipt) {
-              // Fire the AI upload proxy. It manages the optimistic state and db insert returning the ID.
-              await onUploadReceipt(file);
-              // Because ReceiptBacklog maintains its own local fetch sync, we refresh it.
-              await fetchReceipts();
-            }
-            resolve();
-          };
-          reader.readAsDataURL(file);
-        });
+        if (onUploadReceipt) {
+          // Fire and forget (it joins the background queue)
+          onUploadReceipt(file);
+        }
       }
-      e.target.value = ''; // Reset input so the change event fires again for the same file if needed
+      e.target.value = '';
     }
   };
 
@@ -2429,9 +2418,10 @@ function App() {
   const [importedClaim, setImportedClaim] = useState(null);
   const [loading, setLoading] = useState(false);
   const [previewReceipt, setPreviewReceipt] = useState(null);
-  const [sessionBlobMap, setSessionBlobMap] = useState({});
-  const [globalLoadingMessage, setGlobalLoadingMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sessionBlobMap, setSessionBlobMap] = useState({});
+  const [processingQueue, setProcessingQueue] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const getAccountantsForEntity = (entityId) => {
     return (users || []).filter(u =>
@@ -2496,11 +2486,25 @@ function App() {
       window.history.replaceState({}, '', '/');
     }
     fetchGlobalData();
-
-    return () => {
-      subscription?.unsubscribe();
-    };
   }, []);
+
+  // Background Processing Queue (v1.0.0017)
+  useEffect(() => {
+    const processNext = async () => {
+      if (isProcessing || processingQueue.length === 0 || !user) return;
+      setIsProcessing(true);
+      const { file, recordId } = processingQueue[0];
+      try {
+        await runReceiptExtraction(file, recordId);
+      } catch (err) {
+        console.error("Queue processing error:", err);
+      } finally {
+        setProcessingQueue(prev => prev.slice(1));
+        setIsProcessing(false);
+      }
+    };
+    processNext();
+  }, [processingQueue, isProcessing, user]);
 
   const syncUserFromSession = async (session, event) => {
     if (!session) {
@@ -3072,17 +3076,8 @@ function App() {
   };
 
   const handleLocalReceiptUpload = async (file) => {
-    setGlobalLoadingMessage(`Gemini AI is analyzing ${file.name}...`);
     try {
-      // 1. Get the permitted categories for this user's entity to constrain the AI
-      const userEnt = entities.find(e => e.id == user.entityId);
-      let allowedCategories = expenseTypes.map(t => t.label).join(', ');
-
-      const formData = new FormData();
-      formData.append('receipt', file);
-      formData.append('allowedCategories', allowedCategories);
-
-      // 2. Create the base record (Scanning Phase)
+      // 1. Create the base record immediately (Non-blocking)
       const baseReceiptId = crypto.randomUUID ? crypto.randomUUID() : `R${Date.now()}`;
       const newReceipt = {
         id: baseReceiptId,
@@ -3092,19 +3087,38 @@ function App() {
         status: 'UNALLOCATED',
         receipt_status: 'processing',
         amount_suggestion: 0,
-        vendor_suggestion: 'Scanning...'
+        vendor_suggestion: 'Pending Queue...'
       };
+
+      // Create local preview URL (Replaces localStorage to fix QuotaExceededError)
+      const objectUrl = URL.createObjectURL(file);
+      setSessionBlobMap(prev => ({ ...prev, [file.name]: { url: objectUrl, type: file.type } }));
 
       // Optimistic UI Update
       setReceipts(prev => [...prev, newReceipt]);
       const { error: insErr } = await supabase.from('receipts').insert(newReceipt);
-      if (insErr) {
-        console.error("Supabase Insert Error:", insErr);
-        // If we can't insert the initial record, we can't proceed with the AI update loop.
-        throw new Error(`Database connection failed: ${insErr.message}`);
-      }
+      if (insErr) throw insErr;
 
-      // 3. Call the Local Gemini AI Proxy
+      // 2. Add to background processing queue
+      setProcessingQueue(prev => [...prev, { file, recordId: baseReceiptId }]);
+      return { id: baseReceiptId };
+    } catch (err) {
+      console.error("Upload initialization failed:", err);
+      alert(`Upload Failed: ${err.message}`);
+      return null;
+    }
+  };
+
+  const runReceiptExtraction = async (file, baseReceiptId) => {
+    try {
+      const userEnt = entities.find(e => e.id == user.entityId);
+      let allowedCategories = expenseTypes.map(t => t.label).join(', ');
+
+      const formData = new FormData();
+      formData.append('receipt', file);
+      formData.append('allowedCategories', allowedCategories);
+
+      // 1. Call AI Proxy
       let aiResult = null;
       let aiParsed = null;
       let fetchFailed = false;
@@ -3122,19 +3136,16 @@ function App() {
           aiResult = await response.json();
           aiParsed = aiResult.parsed;
         } else {
-          console.error("AI Proxy Error response:", await response.text());
           fetchFailed = true;
         }
       } catch (proxyErr) {
-        console.error("Failed to reach Gemini proxy. Is it running on port 3001?", proxyErr);
         fetchFailed = true;
       }
 
-      // 4. Update the record with extracted data or fallback defaults
+      // 2. Update record with extracted data
       const updatePayload = {
-        file_name: file.name, // Default fallback
         receipt_status: aiParsed ? 'extracted' : 'failed',
-        vendor_suggestion: aiParsed ? aiParsed.vendor_name : (fetchFailed ? 'AI Unavailable' : 'Local Upload'),
+        vendor_suggestion: aiParsed ? aiParsed.vendor_name : (fetchFailed ? 'AI Unavailable' : 'Error'),
         amount_suggestion: aiParsed ? aiParsed.gross_amount : 0,
       };
 
@@ -3144,115 +3155,66 @@ function App() {
         const rCur = aiParsed.expense_currency || 'XXX';
         const rType = aiParsed.expense_type || 'Unknown';
 
-        // Sanitize naming components to avoid storage/URL issues (replace non-alphanumeric with _)
         const sCur = String(rCur).replace(/[^a-z0-9]/gi, '_');
         const sAmt = String(rAmt).replace(/[^a-z0-9.]/gi, '_');
         const sType = String(rType).replace(/[^a-z0-9]/gi, '_');
         const sDate = String(rDate).replace(/[^a-z0-9]/gi, '_');
         const ext = file.name.includes('.') ? file.name.split('.').pop() : 'bin';
 
-        // Rename the file using the extracted format requested by user
         updatePayload.file_name = `${sCur}_${sAmt}_${sType}_${sDate}.${ext}`;
-
         updatePayload.ai_raw_json = aiResult.raw_json;
         updatePayload.ai_model_version = aiResult.model_version;
         updatePayload.expense_currency = aiParsed.expense_currency;
         updatePayload.gross_amount = aiParsed.gross_amount;
         updatePayload.expense_type = aiParsed.expense_type;
+        if (aiParsed.transaction_date && !isNaN(Date.parse(aiParsed.transaction_date))) updatePayload.transaction_date = aiParsed.transaction_date;
+        if (aiParsed.vat_percentage !== null) updatePayload.vat_percentage = aiParsed.vat_percentage;
+        if (aiResult.file_hash) updatePayload.file_hash = aiResult.file_hash;
 
-        if (aiParsed.transaction_date && !isNaN(Date.parse(aiParsed.transaction_date))) {
-          updatePayload.transaction_date = aiParsed.transaction_date;
-        }
-        if (aiParsed.vat_percentage !== null && aiParsed.vat_percentage !== undefined) {
-          updatePayload.vat_percentage = aiParsed.vat_percentage;
-        }
-      }
+        // Duplicate Check
+        const sensitivity = userEnt?.duplicate_sensitivity || 'strict';
+        if (sensitivity !== 'none') {
+          const { data: existing } = await supabase.from('receipts')
+            .select('id, file_hash, vendor_suggestion, transaction_date, gross_amount')
+            .neq('id', baseReceiptId)
+            .eq('duplicate_flag', false);
 
-      // 3b. Upload to Supabase Storage for permanent persistence
-      try {
-        const { error: storageErr } = await supabase.storage
-          .from('receipts')
-          .upload(updatePayload.file_name, file, { upsert: true });
-
-        if (storageErr) {
-          console.warn('Supabase Storage Upload failed (ignore if bucket not setup):', storageErr.message);
-        } else {
-          console.log('Successfully backed up receipt to cloud storage:', updatePayload.file_name);
-        }
-      } catch (stErr) {
-        console.warn('Storage upload error:', stErr);
-      }
-
-      if (aiResult && aiResult.file_hash) {
-        updatePayload.file_hash = aiResult.file_hash;
-      }
-
-      // Check Duplicates based on sensitivity
-      const sensitivity = userEnt?.duplicate_sensitivity || 'strict';
-      if (sensitivity !== 'none') {
-        let isDup = false;
-        let dupId = null;
-        let dupScore = 0;
-
-        const { data: existing } = await supabase.from('receipts')
-          .select('id, file_hash, vendor_suggestion, transaction_date, gross_amount, duplicate_flag')
-          .neq('id', baseReceiptId)
-          .eq('duplicate_flag', false); // Don't match against already flagged duplicates to avoid chains
-
-        if (existing) {
-          for (const rx of existing) {
-            // Strict match: File hash identical
-            if (aiResult && aiResult.file_hash && rx.file_hash === aiResult.file_hash) {
-              isDup = true;
-              dupId = rx.id;
-              dupScore = 1.0;
-              break;
-            }
-            // Standard/Strict match: Same vendor, date, and amount
-            if (aiParsed && rx.vendor_suggestion && rx.vendor_suggestion === updatePayload.vendor_suggestion
-              && rx.transaction_date === updatePayload.transaction_date
-              && Number(rx.gross_amount) === Number(updatePayload.gross_amount)) {
-              isDup = true;
-              dupId = rx.id;
-              dupScore = 0.8;
-              break;
+          if (existing) {
+            for (const rx of existing) {
+              if (aiResult.file_hash && rx.file_hash === aiResult.file_hash) {
+                updatePayload.duplicate_flag = true;
+                updatePayload.duplicate_reference_id = rx.id;
+                updatePayload.duplicate_confidence_score = 1.0;
+                updatePayload.receipt_status = 'flagged_duplicate';
+                break;
+              }
+              if (rx.vendor_suggestion === updatePayload.vendor_suggestion && rx.transaction_date === updatePayload.transaction_date && Number(rx.gross_amount) === Number(updatePayload.gross_amount)) {
+                updatePayload.duplicate_flag = true;
+                updatePayload.duplicate_reference_id = rx.id;
+                updatePayload.duplicate_confidence_score = 0.8;
+                updatePayload.receipt_status = 'flagged_duplicate';
+                break;
+              }
             }
           }
         }
-
-        if (isDup) {
-          updatePayload.duplicate_flag = true;
-          updatePayload.duplicate_reference_id = dupId;
-          updatePayload.duplicate_confidence_score = dupScore;
-          updatePayload.receipt_status = 'flagged_duplicate';
-        }
       }
 
+      // 3. Storage Backup
+      try {
+        await supabase.storage.from('receipts').upload(updatePayload.file_name || file.name, file, { upsert: true });
+      } catch (stErr) { console.warn('Storage upload error:', stErr); }
+
+      // 4. Final Sync
       if (aiParsed && updatePayload.file_name !== file.name) {
         setSessionBlobMap(prev => ({ ...prev, [updatePayload.file_name]: { url: URL.createObjectURL(file), type: file.type } }));
-        const oldBlob = localStorage.getItem(`receipt_blob_${file.name}`);
-        if (oldBlob) {
-          localStorage.setItem(`receipt_blob_${updatePayload.file_name}`, oldBlob);
-        }
-      } else {
-        setSessionBlobMap(prev => ({ ...prev, [file.name]: { url: URL.createObjectURL(file), type: file.type } }));
       }
 
-      const { error: updErr } = await supabase.from('receipts').update(updatePayload).eq('id', baseReceiptId);
-      if (updErr) {
-        console.warn("Final metadata update failed, but AI results are local:", updErr.message);
-      }
-
-      // Update local state smoothly
+      await supabase.from('receipts').update(updatePayload).eq('id', baseReceiptId);
       setReceipts(prev => prev.map(r => r.id === baseReceiptId ? { ...r, ...updatePayload } : r));
-
-      setGlobalLoadingMessage(null);
-      return { id: baseReceiptId, data: updatePayload };
     } catch (err) {
-      console.error("Upload process failed catastrophically:", err);
-      alert(`Upload Failed: ${err.message || 'Check connection'}. If using a high-res image, try a smaller file (under 4MB).`);
-      setGlobalLoadingMessage(null);
-      return null;
+      console.error("Extraction failed:", err);
+      setReceipts(prev => prev.map(r => r.id === baseReceiptId ? { ...r, receipt_status: 'failed' } : r));
     }
   };
 
@@ -3783,11 +3745,10 @@ function App() {
             </div>
           </div>
         )}
-        {globalLoadingMessage && (
-          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(255,255,255,0.8)', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', zIndex: 9999, backdropFilter: 'blur(4px)' }}>
-            <div className="spinner" style={{ width: '50px', height: '50px', border: '5px solid #f3f3f3', borderTop: '5px solid var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: '1.5rem' }}></div>
-            <h3 style={{ color: 'var(--primary)', margin: 0 }}>{globalLoadingMessage}</h3>
-            <p style={{ color: '#666', marginTop: '0.5rem', fontSize: '0.9rem' }}>This usually takes 5-10 seconds...</p>
+        {processingQueue.length > 0 && (
+          <div style={{ position: 'fixed', bottom: '1rem', right: '1rem', background: 'rgba(15, 23, 42, 0.9)', color: 'white', padding: '0.75rem 1.25rem', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '0.75rem', zIndex: 9999, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(8px)' }}>
+            <div className="spinner" style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.2)', borderTop: '2px solid #38bdf8', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+            <span style={{ fontSize: '0.85rem', fontWeight: '500' }}>Processing {processingQueue.length} Receipt{processingQueue.length > 1 ? 's' : ''}...</span>
             <style>{`
               @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             `}</style>

@@ -39,7 +39,11 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 app.post('/api/extract-statement', upload.single('statement'), async (req, res) => {
     try {
+        const startTime = Date.now();
+        console.log(`DEBUG: [extract-statement] Received request for file: ${req.file?.originalname || 'unknown'}`);
+
         if (!process.env.GEMINI_API_KEY) {
+            console.error("DEBUG: [extract-statement] GEMINI_API_KEY missing");
             throw new Error('GEMINI_API_KEY is not configured in Vercel');
         }
 
@@ -48,6 +52,7 @@ app.post('/api/extract-statement', upload.single('statement'), async (req, res) 
         }
 
         const allowedCategories = req.body.allowedCategories || 'Other';
+        console.log(`DEBUG: [extract-statement] Allowed Categories: ${allowedCategories}`);
 
         let promptTemplate = `Extract all transaction lines from this bank statement into a structured list.
         CRITICAL RULES:
@@ -57,12 +62,14 @@ app.post('/api/extract-statement', upload.single('statement'), async (req, res) 
         4. Output MUST be a single JSON object containing a 'transactions' array.`;
 
         try {
+            console.log("DEBUG: [extract-statement] Fetching prompt template from DB...");
             const { data: prompts } = await supabase.from('ai_prompts').select('prompt_text').eq('prompt_type', 'bank_statement').single();
             if (prompts && prompts.prompt_text) {
+                console.log("DEBUG: [extract-statement] Custom prompt template loaded.");
                 promptTemplate = prompts.prompt_text;
             }
         } catch (err) {
-            console.warn("Could not fetch statement prompts from DB", err.message);
+            console.warn("DEBUG: [extract-statement] Could not fetch statement prompts from DB", err.message);
         }
 
         const finalPrompt = promptTemplate.replace('{{allowedCategories}}', allowedCategories);
@@ -84,9 +91,14 @@ app.post('/api/extract-statement', upload.single('statement'), async (req, res) 
             }
         });
 
+        console.log("DEBUG: [extract-statement] Sending request to Gemini 2.5 Flash...");
         const result = await model.generateContent([finalPrompt, filePart]);
         const extractedText = result.response.text();
+        console.log(`DEBUG: [extract-statement] Gemini Response received (${extractedText.length} bytes)`);
         const parsed = JSON.parse(extractedText);
+
+        const duration = Date.now() - startTime;
+        console.log(`DEBUG: [extract-statement] SUCCESS for ${req.file.originalname} (took ${duration}ms)`);
 
         res.json({
             raw_json: extractedText,

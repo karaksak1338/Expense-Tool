@@ -48,7 +48,11 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 app.post('/api/extract', upload.single('receipt'), async (req, res) => {
     try {
+        const startTime = Date.now();
+        console.log(`DEBUG: [extract] Received request for file: ${req.file?.originalname || 'unknown'}`);
+
         if (!process.env.GEMINI_API_KEY) {
+            console.error("DEBUG: [extract] GEMINI_API_KEY missing");
             throw new Error('GEMINI_API_KEY is not configured in Vercel Environment Variables');
         }
 
@@ -57,6 +61,7 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         }
 
         const allowedCategories = req.body.allowedCategories || 'Other';
+        console.log(`DEBUG: [extract] Allowed Categories: ${allowedCategories}`);
         const fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
 
         // Fetch dynamic prompt from DB
@@ -66,12 +71,14 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         2. If the VAT % is not clearly visible or stated, leave 'vat_percentage' as null.`;
 
         try {
+            console.log("DEBUG: [extract] Fetching prompt template from DB...");
             const { data: prompts } = await supabase.from('ai_prompts').select('prompt_text').eq('prompt_type', 'receipts').single();
             if (prompts && prompts.prompt_text) {
+                console.log("DEBUG: [extract] Custom prompt template loaded.");
                 promptTemplate = prompts.prompt_text;
             }
         } catch (err) {
-            console.warn("Could not fetch ai_prompts from DB, using fallback", err.message);
+            console.warn("DEBUG: [extract] Could not fetch ai_prompts from DB, using fallback", err.message);
         }
 
         const finalPrompt = promptTemplate.replace('{{allowedCategories}}', allowedCategories);
@@ -93,8 +100,10 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
             }
         });
 
+        console.log("DEBUG: [extract] Sending request to Gemini 2.5 Flash...");
         const result = await model.generateContent([finalPrompt, filePart]);
         const extractedText = result.response.text();
+        console.log(`DEBUG: [extract] Gemini Response received (${extractedText.length} bytes)`);
 
         let parsedData;
         try {
@@ -102,6 +111,9 @@ app.post('/api/extract', upload.single('receipt'), async (req, res) => {
         } catch (je) {
             throw new Error("Model returned malformed JSON");
         }
+
+        const duration = Date.now() - startTime;
+        console.log(`DEBUG: [extract] SUCCESS for ${req.file.originalname} (took ${duration}ms)`);
 
         res.json({
             raw_json: extractedText,

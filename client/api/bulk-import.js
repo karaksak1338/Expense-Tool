@@ -1,5 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
+const TIMEOUT_MS = 10000;
+
+async function withTimeout(promise, ms, label = 'Request') {
+    const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    );
+    return Promise.race([promise, timeout]);
+}
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -21,13 +30,38 @@ export default async function handler(req, res) {
 
     // 1. Authorization Check (Requester must be an Admin)
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: 'Missing or invalid token' });
+    if (!authHeader) {
+        console.error("DEBUG: [bulk-import] Missing Authorization Header");
+        return res.status(401).json({ error: 'Missing or invalid token' });
+    }
 
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+    console.log(`DEBUG: [bulk-import] Verifying token for table: ${table}...`);
+    let authUser = null;
+    try {
+        const { data: { user }, error: authError } = await withTimeout(
+            supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', '')),
+            TIMEOUT_MS,
+            'Auth verification'
+        );
+        if (authError || !user) {
+            console.error("DEBUG: [bulk-import] Auth verification failed:", authError?.message || "User not found");
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        authUser = user;
+    } catch (err) {
+        console.error("DEBUG: [bulk-import] Verification CRASH or TIMEOUT:", err.message);
+        return res.status(504).json({ error: 'Identity verification service timed out.' });
+    }
 
-    const { data: adminUser } = await supabaseAdmin.from('users').select('roles').eq('email', user.email).single();
-    if (!adminUser?.roles?.includes('ADMIN')) return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    const { data: adminUser } = await withTimeout(
+        supabaseAdmin.from('users').select('roles').eq('email', authUser.email).single(),
+        TIMEOUT_MS,
+        'Role check'
+    );
+    if (!adminUser?.roles?.includes('ADMIN')) {
+        console.error("DEBUG: [bulk-import] Forbidden access attempt by:", authUser.email);
+        return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
 
     try {
         const results = { imported: 0, failed: 0, errors: [] };
@@ -67,9 +101,13 @@ export default async function handler(req, res) {
                 }
             }
         } else {
+            console.log(`DEBUG: [bulk-import] Generic upsert for ${data.length} records into ${table}...`);
             // GENERIC BULK INSERT FOR OTHER TABLES
-            // Note: Upsert allows for overwriting existing records by ID
-            const { error: upsertError } = await supabaseAdmin.from(table).upsert(data);
+            const { error: upsertError } = await withTimeout(
+                supabaseAdmin.from(table).upsert(data),
+                TIMEOUT_MS * 2,
+                'Bulk upsert'
+            );
             if (upsertError) throw upsertError;
             results.imported = data.length;
         }
