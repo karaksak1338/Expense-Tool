@@ -23,8 +23,12 @@ export default async function handler(req, res) {
     const authHeader = req.headers.authorization;
     if (!authHeader) return res.status(401).json({ error: 'Missing or invalid token' });
 
+    console.log("DEBUG: Verifying token with Supabase Admin...");
     const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+    if (authError || !user) {
+        console.error("DEBUG: Auth verification failed:", authError?.message || "User not found");
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     // Check roles in public.users table
     const { data: adminUser, error: roleError } = await supabaseAdmin
