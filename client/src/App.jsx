@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0026</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0027</div>
       </div>
     </div>
   );
@@ -322,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0026</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0027</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -397,7 +397,7 @@ const ClaimReport = ({ claim, user, entity }) => (
   </div>
 );
 
-const DetailView = ({ claim, owner, approver, accountants, currentUser, entity, onBack, onStatusUpdate, onEdit, onSave, mode, expenseTypes, onPreview }) => {
+const DetailView = ({ claim, owner, approver, accountants, users, currentUser, entity, onBack, onStatusUpdate, onEdit, onSave, mode, expenseTypes, onPreview }) => {
   const [activeTab, setActiveTab] = useState('details');
   const [syncing, setSyncing] = useState(false);
   const [history, setHistory] = useState([]);
@@ -522,7 +522,10 @@ const DetailView = ({ claim, owner, approver, accountants, currentUser, entity, 
           <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500' }}>Advance: {claim.currency || '€'}{claim.advanceAmount}</span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px', alignItems: 'center' }}>
             {entity && <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#f0f4f8', padding: '4px 8px', borderRadius: '4px', border: '1px solid #d9e2ec' }}>Entity: <strong>{entity.code} - {entity.name}</strong></span>}
-            {approver && <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#fff', padding: '4px 8px', borderRadius: '4px', border: '1px solid #ddd' }}>Approver: <strong>{approver.name}</strong></span>}
+            {(() => {
+              const displayApprover = approver || (users || []).find(u => u.id === claim.approver_id);
+              return displayApprover && <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#fff', padding: '4px 8px', borderRadius: '4px', border: '1px solid #ddd' }}>Approver: <strong>{displayApprover.name}</strong></span>;
+            })()}
             {accountants?.length > 0 && (
               <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#e0f2fe', padding: '4px 8px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
                 Accountant: <strong>{accountants.map(a => a.name).join(', ')}</strong>
@@ -1925,6 +1928,26 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
     setEditingItem(null);
   };
 
+  const handleResetPassword = async (userId) => {
+    if (!confirm("Are you sure you want to reset this user's password to 'DCBIExpense'?")) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ userId })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+      alert('Password reset successfully to: DCBIExpense');
+    } catch (err) {
+      alert('Reset failed: ' + err.message);
+    }
+  };
+
   const filtered = (list) => {
     return (list || []).filter(item =>
       (item.name || item.label || item.title || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -2365,8 +2388,9 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               <label style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>Approver:</label>
                               <select
-                                style={{ padding: '0.2rem', fontSize: '0.8rem', width: '100%' }}
-                                value={multiCfg.approver_id || ''}
+                                disabled={isPrimary}
+                                style={{ padding: '0.2rem', fontSize: '0.8rem', width: '100%', background: isPrimary ? '#e5e7eb' : '#fff' }}
+                                value={isPrimary ? (editingItem.approverId || '') : (multiCfg.approver_id || '')}
                                 onChange={e => {
                                   const config = { ...(editingItem.multiEntityConfig || {}) };
                                   config[entId] = { ...multiCfg, approver_id: e.target.value };
@@ -2450,6 +2474,9 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
 
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '2rem' }}>
               {!editingItem.isReadOnly && <button className="btn btn-primary" style={{ flex: 1 }} onClick={handleSave}>Confirm & Sync</button>}
+              {editingItem.type === 'user' && !editingItem.isNew && (
+                <button className="btn btn-warning" onClick={() => handleResetPassword(editingItem.id)}>🔑 Reset Password</button>
+              )}
               <button className="btn btn-outline" style={{ flex: editingItem.isReadOnly ? 1 : 'none' }} onClick={() => setEditingItem(null)}>{editingItem.isReadOnly ? 'Close' : 'Discard'}</button>
             </div>
           </div>
@@ -2863,14 +2890,14 @@ function App() {
       } else {
         // Handle User Entity Approvers Multi-saving
         if (collection === 'users' && payload.multiEntityConfig) {
-          const finalAssigned = dbPayload.assigned_entities || payload.assignedEntities || item.assignedEntities || [];
+          const finalAssigned = dbPayload.assigned_entities || payload.assignedEntities || payload.assigned_entities || [];
 
           // 1. Delete configs for entities no longer assigned
-          const { data: existingUEAs } = await supabase.from('user_entity_approvers').select('entity_id').eq('user_id', item.id);
+          const { data: existingUEAs } = await supabase.from('user_entity_approvers').select('entity_id').eq('user_id', dbPayload.id || payload.id);
           if (existingUEAs) {
             const removedEntities = existingUEAs.filter(ua => !finalAssigned.includes(ua.entity_id)).map(ua => ua.entity_id);
             if (removedEntities.length > 0) {
-              await supabase.from('user_entity_approvers').delete().eq('user_id', item.id).in('entity_id', removedEntities);
+              await supabase.from('user_entity_approvers').delete().eq('user_id', dbPayload.id || payload.id).in('entity_id', removedEntities);
             }
           }
 
@@ -2879,7 +2906,7 @@ function App() {
             .filter(([entId]) => finalAssigned.includes(entId))
             .map(([entId, cfg]) => ({
               id: cfg.id || undefined,
-              user_id: dbPayload.id || item.id,
+              user_id: dbPayload.id || payload.id,
               entity_id: entId,
               approver_id: cfg.approver_id === "" ? null : (cfg.approver_id || null),
               is_accountant: !!cfg.is_accountant,
@@ -3484,7 +3511,7 @@ function App() {
             <div className="card">
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr style={{ textAlign: 'left' }}><th>ID</th><th>Title</th><th>Total</th><th>Accountant</th><th>Claim Status</th><th>Approval</th><th>Action</th></tr></thead>
-                <tbody>{claims.filter(c => c.userId == user.id && (searchTerm === '' || c.title.toLowerCase().includes(searchTerm.toLowerCase()) || c.id.toLowerCase().includes(searchTerm.toLowerCase()))).map(c => (
+                <tbody>{claims.filter(c => (user.roles?.includes('ADMIN') || c.userId == user.id) && (searchTerm === '' || c.title.toLowerCase().includes(searchTerm.toLowerCase()) || c.id.toLowerCase().includes(searchTerm.toLowerCase()))).map(c => (
                   <tr key={c.id}>
                     <td style={{ padding: '1rem 0' }}><code style={{ fontSize: '0.75rem' }}>{c.id}</code></td>
                     <td>{c.title} {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>}</td>
@@ -3521,6 +3548,7 @@ function App() {
             owner={users.find(u => u.id == selectedClaim.userId)}
             approver={users.find(u => u.id === selectedClaim.approver_id)}
             accountants={getAccountantsForEntity(selectedClaim.entityId)}
+            users={users}
             currentUser={user}
             entity={entities.find(e => e.id == selectedClaim.entityId)}
             onBack={() => setSelectedClaim(null)}
