@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0019</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0020</div>
       </div>
     </div>
   );
@@ -322,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0019</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0020</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -1350,18 +1350,22 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
       }
     }
 
+    const currentEntity = entities.find(el => el.id == user.entityId);
+    const entityPrimaryCurrency = currentEntity?.primary_currency || 'EUR';
+
     const newClaim = {
       id: 'DRAFT-' + Date.now(),
       title: 'Company Card: ' + new Date().toLocaleDateString(),
       userId: user.id,
       entityId: user.entityId,
+      currency: entityPrimaryCurrency,
       advanceAmount: 0,
       claimStatus: CLAIM_STATUS.NEW,
       approvalStatus: APPROVAL_STATUS.NA,
       claim_type: 'CompanyCard',
       statement_attachment: attachmentPath,
       import_batch_id: 'BATCH-' + Date.now(),
-      expenses: transactions.map((tx, idx) => ({
+      expenses: (transactions || []).map((tx, idx) => ({
         id: Date.now() + idx,
         type: tx.suggestedType,
         amount: tx.amount, // Transaction (for matching)
