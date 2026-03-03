@@ -192,7 +192,7 @@ const SettingsView = ({ user, entities, users, userEntityApprovers, onBack }) =>
                       <strong>{entities.find(e => e.id === user.entityId)?.name || 'Primary Entity'}</strong>
                       <span style={{ marginLeft: '0.5rem', fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 'bold' }}>(PRIMARY)</span>
                     </td>
-                    <td>{users.find(u => String(u.id) === String(user.approverId))?.name || 'Default / None'}</td>
+                    <td>{users.find(u => String(u.id) === String(user.approverId || user.approver_id))?.name || 'Default / None'}</td>
                     <td>{user.roles?.includes('ACCOUNTANT') ? '✅ Yes' : '—'}</td>
                   </tr>
                 )}
@@ -248,9 +248,9 @@ const SettingsView = ({ user, entities, users, userEntityApprovers, onBack }) =>
 const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerApprover }) => {
   const hasRole = (role) => user.roles.includes(role);
 
-  const primaryApproverId = user.approverId || user.assignedEntities?.[0]?.approverId;
+  const primaryApproverId = user.approverId || user.approver_id;
   const primaryApprover = users?.find(u => String(u.id) === String(primaryApproverId));
-  const approverName = primaryApprover ? primaryApprover.name : (primaryApproverId && primaryApproverId !== 'N/A' ? 'Searching...' : 'N/A');
+  const approverName = primaryApprover ? primaryApprover.name : (primaryApproverId && primaryApproverId !== 'N/A' && primaryApproverId !== 'undefined' ? 'Searching...' : 'N/A');
 
   return (
     <aside className="sidebar">
