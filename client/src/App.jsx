@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0027</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0028</div>
       </div>
     </div>
   );
@@ -322,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0027</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0028</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -1547,43 +1547,16 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
   );
 };
 
-const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }) => {
-  const [receipts, setReceipts] = useState([]);
-  const [loading, setLoading] = useState(false);
+const ReceiptBacklog = ({ user, receipts, onAllocate, onUploadReceipt, onBack, onPreview, onDeleteSuccess }) => {
   const [editingReceipt, setEditingReceipt] = useState(null);
   const [search, setSearch] = useState('');
   const fileInputRef = React.useRef(null);
-
-  useEffect(() => {
-    fetchReceipts();
-  }, []);
-
-  const fetchReceipts = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('receipts')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('status', 'UNALLOCATED');
-
-      if (error) throw error;
-      setReceipts(data || []);
-    } catch (err) {
-      console.error('Fetch receipts error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const onFileChange = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length > 0) {
       for (const file of files) {
-        if (onUploadReceipt) {
-          // Fire and forget (it joins the background queue)
-          onUploadReceipt(file);
-        }
+        if (onUploadReceipt) onUploadReceipt(file);
       }
       e.target.value = '';
     }
@@ -1591,16 +1564,10 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
 
   const handleDelete = async (id) => {
     try {
-      const { error } = await supabase
-        .from('receipts')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('receipts').delete().eq('id', id);
       if (error) throw error;
-      fetchReceipts();
-    } catch (err) {
-      console.error('Delete error:', err);
-    }
+      if (onDeleteSuccess) onDeleteSuccess();
+    } catch (err) { console.error('Delete error:', err); }
   };
 
   return (
@@ -1618,64 +1585,61 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
             />
           </div>
           <button className="btn btn-outline" onClick={onBack}>Back</button>
-          <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={onFileChange} />
+          <input type="file" multiple ref={fileInputRef} style={{ display: 'none' }} onChange={onFileChange} />
           <button className="btn btn-primary" onClick={() => fileInputRef.current.click()}>+ Upload from Local Machine</button>
         </div>
       </div>
 
       <div className="card" style={{ marginTop: '1.5rem' }}>
-        {loading ? <p>Loading backlog...</p> : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1.5rem' }}>
-            {receipts.filter(r => {
-              const s = search.toLowerCase();
-              return search === '' ||
-                r.file_name?.toLowerCase().includes(s) ||
-                r.vendor_suggestion?.toLowerCase().includes(s) ||
-                (r.id && String(r.id).toLowerCase().includes(s));
-            }).map(r => (
-              <div key={r.id} className="card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                    <span style={{ fontSize: '2rem', cursor: 'pointer' }} onClick={() => onPreview && onPreview(r.file_name)}>📄</span>
-                    <div style={{ display: 'flex', gap: '4px', flexDirection: 'column', alignItems: 'flex-end' }}>
-                      <span className="badge badge-pending">{r.status}</span>
-                      {r.receipt_status === 'processing' && <span className="badge" style={{ background: '#fff3e0', color: '#e65100', border: '1px solid #ffe0b2' }}>⏳ Processing AI...</span>}
-                      {r.receipt_status === 'failed' && <span className="badge badge-rejected">AI Failed</span>}
-                      {r.receipt_status === 'extracted' && <span className="badge badge-approved">✨ AI Extracted</span>}
-                      {r.receipt_status === 'flagged_duplicate' && (
-                        <span className="badge badge-rejected" style={{ background: '#ffebee', color: '#c62828' }}>🚩 Duplicate ({Math.round((r.duplicate_confidence_score || 1) * 100)}%)</span>
-                      )}
-                    </div>
-                  </div>
-                  <strong style={{ display: 'block', wordBreak: 'break-all', marginBottom: '0.5rem', cursor: 'pointer' }} onClick={() => onPreview && onPreview(r.file_name)}>{r.file_name}</strong>
-                  <div style={{ color: 'var(--primary)', fontWeight: 'bold', fontSize: '1.2rem', marginBottom: '0.2rem' }}>
-                    {r.expense_currency || '€'}{r.amount_suggestion || r.gross_amount || 0}
-                  </div>
-                  <div style={{ color: '#666', fontSize: '0.85rem' }}>
-                    <strong>{r.vendor_suggestion || 'Unknown Vendor'}</strong>
-                    {r.expense_type && <div style={{ marginTop: '2px', fontStyle: 'italic' }}>Cat: {r.expense_type}</div>}
-                    {r.transaction_date && <div style={{ marginTop: '2px' }}>Date: {r.transaction_date}</div>}
-                    {r.vat_percentage !== null && r.vat_percentage !== undefined && <div style={{ marginTop: '2px' }}>VAT: {r.vat_percentage}%</div>}
-                    {r.duplicate_flag && <div style={{ marginTop: '8px', color: '#d32f2f', fontWeight: 'bold', fontSize: '0.75rem' }}>⚠️ Audited as Duplicate</div>}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1.5rem' }}>
+          {receipts.filter(r => {
+            const s = search.toLowerCase();
+            return search === '' ||
+              r.file_name?.toLowerCase().includes(s) ||
+              r.vendor_suggestion?.toLowerCase().includes(s) ||
+              (r.id && String(r.id).toLowerCase().includes(s));
+          }).map(r => (
+            <div key={r.id} className="card" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '2rem', cursor: 'pointer' }} onClick={() => onPreview && onPreview(r.file_name)}>📄</span>
+                  <div style={{ display: 'flex', gap: '4px', flexDirection: 'column', alignItems: 'flex-end' }}>
+                    <span className="badge badge-pending">{r.status}</span>
+                    {r.receipt_status === 'processing' && <span className="badge" style={{ background: '#fff3e0', color: '#e65100', border: '1px solid #ffe0b2' }}>⏳ Processing AI...</span>}
+                    {r.receipt_status === 'failed' && <span className="badge badge-rejected">AI Failed</span>}
+                    {r.receipt_status === 'extracted' && <span className="badge badge-approved">✨ AI Extracted</span>}
+                    {r.receipt_status === 'flagged_duplicate' && (
+                      <span className="badge badge-rejected" style={{ background: '#ffebee', color: '#c62828' }}>🚩 Duplicate ({Math.round((r.duplicate_confidence_score || 1) * 100)}%)</span>
+                    )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                  <button className="btn btn-outline" style={{ padding: '0.2rem 0.4rem', fontSize: '0.7rem' }} onClick={() => setEditingReceipt(r)}>Edit</button>
-                  <button className="btn btn-outline" style={{ padding: '0.2rem 0.4rem', fontSize: '0.7rem', color: 'var(--error)' }} onClick={() => handleDelete(r.id)}>Delete</button>
-                  <button className="btn btn-primary" style={{ flex: 1, fontSize: '0.75rem' }} onClick={() => onAllocate(r)}>Use in New Claim</button>
+                <strong style={{ display: 'block', wordBreak: 'break-all', marginBottom: '0.5rem', cursor: 'pointer' }} onClick={() => onPreview && onPreview(r.file_name)}>{r.file_name}</strong>
+                <div style={{ color: 'var(--primary)', fontWeight: 'bold', fontSize: '1.2rem', marginBottom: '0.2rem' }}>
+                  {r.expense_currency || '€'}{r.amount_suggestion || r.gross_amount || 0}
+                </div>
+                <div style={{ color: '#666', fontSize: '0.85rem' }}>
+                  <strong>{r.vendor_suggestion || 'Unknown Vendor'}</strong>
+                  {r.expense_type && <div style={{ marginTop: '2px', fontStyle: 'italic' }}>Cat: {r.expense_type}</div>}
+                  {r.transaction_date && <div style={{ marginTop: '2px' }}>Date: {r.transaction_date}</div>}
+                  {r.vat_percentage !== null && r.vat_percentage !== undefined && <div style={{ marginTop: '2px' }}>VAT: {r.vat_percentage}%</div>}
+                  {r.duplicate_flag && <div style={{ marginTop: '8px', color: '#d32f2f', fontWeight: 'bold', fontSize: '0.75rem' }}>⚠️ Audited as Duplicate</div>}
                 </div>
               </div>
-            ))}
-            {receipts.length === 0 && <p style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: '#888' }}>No unallocated receipts found. Upload some!</p>}
-          </div>
-        )}
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                <button className="btn btn-outline" style={{ padding: '0.2rem 0.4rem', fontSize: '0.7rem' }} onClick={() => setEditingReceipt(r)}>Edit</button>
+                <button className="btn btn-outline" style={{ padding: '0.2rem 0.4rem', fontSize: '0.7rem', color: 'var(--error)' }} onClick={() => handleDelete(r.id)}>Delete</button>
+                <button className="btn btn-primary" style={{ flex: 1, fontSize: '0.75rem' }} onClick={() => onAllocate(r)}>Use in New Claim</button>
+              </div>
+            </div>
+          ))}
+          {receipts.length === 0 && <p style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: '#888' }}>No unallocated receipts found. Upload some!</p>}
+        </div>
       </div>
 
       {editingReceipt && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}>
           <div className="card" style={{ width: '500px', maxHeight: '90vh', overflowY: 'auto', padding: '2rem' }}>
             <h2 style={{ margin: '0 0 1.5rem 0' }}>Review & Edit Receipt</h2>
-
             <div className="form-group"><label>Vendor Name</label><input value={editingReceipt.vendor_suggestion || ''} onChange={e => setEditingReceipt({ ...editingReceipt, vendor_suggestion: e.target.value })} /></div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
               <div className="form-group"><label>Transaction Date</label><input type="date" value={editingReceipt.transaction_date || ''} onChange={e => setEditingReceipt({ ...editingReceipt, transaction_date: e.target.value })} /></div>
@@ -1686,7 +1650,6 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
               <div className="form-group"><label>VAT (%)</label><input type="number" step="0.1" value={editingReceipt.vat_percentage || ''} onChange={e => setEditingReceipt({ ...editingReceipt, vat_percentage: e.target.value })} /></div>
               <div className="form-group"><label>Currency</label><input value={editingReceipt.expense_currency || ''} onChange={e => setEditingReceipt({ ...editingReceipt, expense_currency: e.target.value.toUpperCase() })} /></div>
             </div>
-
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '2rem' }}>
               <button className="btn btn-primary" style={{ flex: 1 }} onClick={async () => {
                 try {
@@ -1702,7 +1665,7 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
                   };
                   await supabase.from('receipts').update(payload).eq('id', editingReceipt.id);
                   setEditingReceipt(null);
-                  fetchReceipts();
+                  if (onDeleteSuccess) onDeleteSuccess();
                 } catch (err) { console.error('Update failed:', err); }
               }}>Save Override {"&"} Close</button>
               <button className="btn btn-outline" onClick={() => setEditingReceipt(null)}>Cancel</button>
@@ -1710,7 +1673,6 @@ const ReceiptBacklog = ({ user, onAllocate, onUploadReceipt, onBack, onPreview }
           </div>
         </div>
       )}
-
     </div>
   );
 };
@@ -2397,7 +2359,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                                   setEditingItem({ ...editingItem, multiEntityConfig: config });
                                 }}>
                                 <option value="">None</option>
-                                {users.filter(u => u.id !== editingItem.id).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                                {users.filter(u => u.id !== editingItem.id && String(u.roles).includes('MANAGER')).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                               </select>
                             </div>
                             <label style={{ fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
@@ -3584,7 +3546,9 @@ function App() {
         {view === 'receipts-backlog' && (
           <ReceiptBacklog
             user={user}
+            receipts={receipts.filter(r => r.user_id === user.id && r.status === 'UNALLOCATED')}
             onUploadReceipt={handleLocalReceiptUpload}
+            onDeleteSuccess={fetchData}
             onAllocate={(r) => {
               const draft = {
                 id: 'DRAFT-' + Date.now(),
