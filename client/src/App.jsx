@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0018</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0019</div>
       </div>
     </div>
   );
@@ -322,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0018</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0019</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -1250,7 +1250,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
   );
 };
 
-const ImportPortal = ({ entities, user, expenseTypes, onImportComplete, setGlobalLoadingMessage }) => {
+const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
   const [step, setStep] = useState('upload');
   const [transactions, setTransactions] = useState([]);
   const [statementFile, setStatementFile] = useState(null);
@@ -1261,7 +1261,6 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete, setGloba
     if (!file) return;
     setStatementFile(file);
     setIsUploading(true);
-    setGlobalLoadingMessage(`Gemini AI is analyzing statement: ${file.name}...`);
 
     // Robustness: Cache the statement locally for instant preview, same as Receipts Library
     const reader = new FileReader();
@@ -1319,7 +1318,6 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete, setGloba
       alert('Failed to extract data from statement. Please ensure it is a clear PDF, Image, or CSV.');
     } finally {
       setIsUploading(false);
-      setGlobalLoadingMessage(null);
     }
   };
 
@@ -3490,7 +3488,6 @@ function App() {
             entities={entities}
             user={user}
             expenseTypes={expenseTypes}
-            setGlobalLoadingMessage={setGlobalLoadingMessage}
             onImportComplete={(draft) => { setImportedClaim(draft); setView('new-claim'); }}
           />
         )}
