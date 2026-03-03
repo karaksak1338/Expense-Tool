@@ -1855,7 +1855,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
             />
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button className="btn btn-outline" onClick={() => setShowBulkImport(true)}>📥 Bulk Import</button>
+            {user.roles?.includes('ADMIN') && <button className="btn btn-outline" onClick={() => setShowBulkImport(true)}>📥 Bulk Import</button>}
             {activeTab === 'users' && <button className="btn btn-primary" onClick={() => setEditingItem({ type: 'user', isNew: true, roles: ['STAFF'] })}>+ Invite User</button>}
             {activeTab !== 'users' && (!isRestricted || activeTab !== 'entities') && (
               <button className="btn btn-primary" onClick={() => {
