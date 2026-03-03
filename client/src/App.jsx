@@ -36,6 +36,7 @@ const APPROVAL_STATUS = { NA: 'N/A', PENDING: 'PENDING APPROVAL', REJECTED: 'REJ
 const LoginPage = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -99,7 +100,35 @@ const LoginPage = ({ onLogin }) => {
                   Forgot password?
                 </button>
               </div>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" style={{ padding: '0.8rem' }} />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  placeholder="••••••••"
+                  style={{ padding: '0.8rem', paddingRight: '2.5rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: '1.2rem',
+                    padding: 0,
+                    color: '#64748b'
+                  }}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? '👁️' : '👁️‍🗨️'}
+                </button>
+              </div>
             </div>
           )}
           <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '2rem', padding: '1rem' }} disabled={loading}>
@@ -117,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0015</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0016</div>
       </div>
     </div>
   );
@@ -293,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0015</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0016</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
