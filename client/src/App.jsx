@@ -36,39 +36,30 @@ const APPROVAL_STATUS = { NA: 'N/A', PENDING: 'PENDING APPROVAL', REJECTED: 'REJ
 const LoginPage = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [message, setMessage] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setMessage(null);
     try {
-      if (isRegistering) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: email.split('@')[0]
-            }
-          }
+      if (isResettingPassword) {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
         });
         if (error) throw error;
-        alert('Registration successful! If email confirmation is enabled, please check your inbox. Otherwise, you can now sign in.');
-        setIsRegistering(false);
+        setMessage('Password reset email sent! Please check your inbox.');
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       }
     } catch (err) {
       console.error("DEBUG: Auth Error:", err);
-      if (err.message?.toLowerCase().includes('confirm')) {
-        setError('Please check your email inbox to confirm your account first!');
-      } else {
-        setError(err.message || 'Authentication failed');
-      }
+      setError(err.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
@@ -78,37 +69,43 @@ const LoginPage = ({ onLogin }) => {
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', background: 'var(--bg-main)', padding: '2rem' }}>
       <div className="card" style={{ width: '400px', textAlign: 'center', padding: '2.5rem' }}>
         <h1 style={{ marginBottom: '0.5rem' }}>DCBI Expense Tool</h1>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>{isRegistering ? 'Create Your Account' : 'Secure Sign In'}</p>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>{isResettingPassword ? 'Reset Your Password' : 'Secure Sign In'}</p>
 
         {error && <div style={{ background: '#fee2e2', color: '#b91c1c', padding: '0.75rem', borderRadius: '6px', marginBottom: '1.5rem', fontSize: '0.9rem' }}>{error}</div>}
+        {message && <div style={{ background: '#dcfce7', color: '#15803d', padding: '0.75rem', borderRadius: '6px', marginBottom: '1.5rem', fontSize: '0.9rem' }}>{message}</div>}
 
         <form onSubmit={handleSubmit} style={{ textAlign: 'left' }}>
           <div className="form-group">
             <label>Email Address</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@dcbi.com" style={{ padding: '0.8rem' }} />
           </div>
-          <div className="form-group" style={{ marginTop: '1rem' }}>
-            <label>Password</label>
-            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" style={{ padding: '0.8rem' }} />
-          </div>
+          {!isResettingPassword && (
+            <div className="form-group" style={{ marginTop: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label>Password</label>
+                <button type="button" className="btn-link" style={{ fontSize: '0.75rem', color: 'var(--primary)', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }} onClick={() => setIsResettingPassword(true)}>
+                  Forgot password?
+                </button>
+              </div>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required placeholder="••••••••" style={{ padding: '0.8rem' }} />
+            </div>
+          )}
           <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '2rem', padding: '1rem' }} disabled={loading}>
-            {loading ? 'Processing...' : (isRegistering ? 'Register' : 'Sign In')}
+            {loading ? 'Processing...' : (isResettingPassword ? 'Send Reset Link' : 'Sign In')}
           </button>
+          {isResettingPassword && (
+            <button type="button" className="btn btn-outline" style={{ width: '100%', marginTop: '1rem' }} onClick={() => setIsResettingPassword(false)}>
+              Back to Sign In
+            </button>
+          )}
         </form>
-
-        <p style={{ marginTop: '1.5rem', fontSize: '0.9rem' }}>
-          {isRegistering ? 'Already have an account?' : 'First time here?'}
-          <button className="btn-link" style={{ marginLeft: '5px', color: 'var(--primary)', fontWeight: 'bold', background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => setIsRegistering(!isRegistering)}>
-            {isRegistering ? 'Sign In instead' : 'Register now'}
-          </button>
-        </p>
 
         <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid #eee' }}>
           <button className="btn btn-outline" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }} onClick={() => alert('Corporate SSO will be available soon.')}>
             🛡️ SSO Login
           </button>
         </div>
-        <p style={{ marginTop: '1.5rem', fontSize: '0.75rem', color: '#94a3b8' }}>For initial registration, use the default password: <strong>DCBIExpense</strong></p>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0014</div>
       </div>
     </div>
   );
@@ -284,7 +281,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0013</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0014</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
