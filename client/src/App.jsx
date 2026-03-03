@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0020</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0021</div>
       </div>
     </div>
   );
@@ -322,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0020</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0021</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -2847,17 +2847,18 @@ function App() {
 
       const dbBase = { ...claimBase };
       if (dbBase.id && String(dbBase.id).startsWith('DRAFT-')) {
-        // Custom Sequence ID: [EntityCode]-[Month]-[HourMinute]-[Currency]
+        // Custom Sequence ID: [EntityCode]-[Month]-[HourMinute]-[UserShortID]-[Currency]
         const ent = entities.find(e => String(e.id) == String(dbBase.entity_id || claimData.entityId));
         const entCode = ent?.code || ent?.companyCode || 'EX';
         const now = new Date();
         const mm = String(now.getMonth() + 1).padStart(2, '0');
         const hhmm = String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
+        const userSuffix = user.id ? user.id.split('-')[0].toUpperCase() : Math.random().toString(36).substr(2, 4).toUpperCase();
         const cur = claimData.currency || (expenses && expenses[0]?.currency) || 'EUR';
 
-        dbBase.id = `${entCode}-${mm}-${hhmm}-${cur}`;
+        dbBase.id = `${entCode}-${mm}-${hhmm}-${userSuffix}-${cur}`;
 
-        // Safety: If ID already exists (unlikely collision), add small suffix
+        // Safety: If ID already exists (unlikely collision now), add small random suffix
         const isDuplicate = claims.some(c => c.id === dbBase.id);
         if (isDuplicate) {
           dbBase.id += '-' + Math.random().toString(36).substr(2, 3).toUpperCase();
@@ -2925,6 +2926,8 @@ function App() {
         submission_date: dbBase.claim_status === CLAIM_STATUS.SUBMITTED ? new Date().toISOString() : (dbBase.submission_date ? new Date(dbBase.submission_date).toISOString() : null),
         history: newHistory
       };
+
+      console.log("DEBUG: handleSaveClaim payload:", safeClaim);
 
       const { data: claim, error: cErr } = await supabase
         .from('claims')
