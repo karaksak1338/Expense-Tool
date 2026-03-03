@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0022</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0023</div>
       </div>
     </div>
   );
@@ -322,7 +322,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0022</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0023</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -1251,7 +1251,28 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
 };
 
 const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
-  const [step, setStep] = useState('upload');
+  const availableEntities = useMemo(() => {
+    if (user.roles?.includes('ADMIN')) return entities;
+    const allowedIds = [user.entityId, ...(user.assignedEntities || [])].filter(Boolean);
+    return entities.filter(e => allowedIds.map(String).includes(String(e.id)));
+  }, [entities, user]);
+
+  const [selectedEntityId, setSelectedEntityId] = useState(user.entityId || (availableEntities[0]?.id || ''));
+  const activeEntity = useMemo(() => entities.find(e => String(e.id) === String(selectedEntityId)) || {}, [entities, selectedEntityId]);
+
+  const availableCurrencies = useMemo(() => {
+    if (!activeEntity.id) return [];
+    return [activeEntity.primary_currency, activeEntity.secondary_currency].filter(Boolean);
+  }, [activeEntity]);
+
+  const [selectedCurrency, setSelectedCurrency] = useState(activeEntity.primary_currency || '');
+
+  // Auto-sync currency when entity changes
+  useEffect(() => {
+    if (activeEntity.primary_currency) setSelectedCurrency(activeEntity.primary_currency);
+  }, [activeEntity]);
+
+  const [step, setStep] = useState('header'); // header -> upload -> staging
   const [transactions, setTransactions] = useState([]);
   const [statementFile, setStatementFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -1293,20 +1314,16 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
       if (!response.ok) throw new Error(await response.text());
 
       const result = await response.json();
-      const currentEntity = entities.find(el => el.id == user.entityId);
-      const entityPrimaryCurrency = currentEntity?.primary_currency || 'EUR';
+      const entityPrimaryCurrency = selectedCurrency || activeEntity?.primary_currency || 'EUR';
 
       const extractedTransactions = (result.transactions || []).map(tx => ({
         ...tx,
         id: 'STMT-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
-        // Map AI fields to our internal transaction structure
         date: tx.date,
         vendor: tx.vendor,
-        // If the original transaction currency matches the company currency, use the billing amount for both to ensure 100% precision.
         amount: (tx.transaction_currency === entityPrimaryCurrency) ? (parseFloat(tx.billing_amount) || 0) : (parseFloat(tx.transaction_amount) || 0),
         currency: tx.transaction_currency || 'EUR',
         billing_amount: parseFloat(tx.billing_amount) || 0,
-        // ENFORCE: Billing currency MUST match the company's primary currency
         billing_currency: entityPrimaryCurrency,
         suggestedType: tx.suggestedType || 'Other'
       }));
@@ -1350,14 +1367,13 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
       }
     }
 
-    const currentEntity = entities.find(el => el.id == user.entityId);
-    const entityPrimaryCurrency = currentEntity?.primary_currency || 'EUR';
+    const entityPrimaryCurrency = selectedCurrency || activeEntity?.primary_currency || 'EUR';
 
     const newClaim = {
       id: 'DRAFT-' + Date.now(),
       title: 'Company Card: ' + new Date().toLocaleDateString(),
       userId: user.id,
-      entityId: user.entityId,
+      entityId: selectedEntityId,
       currency: entityPrimaryCurrency,
       advanceAmount: 0,
       claimStatus: CLAIM_STATUS.NEW,
@@ -1395,17 +1411,77 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
         <input id="statement-upload" type="file" accept=".csv,.pdf,.png,.jpg,.jpeg,.xlsx" onChange={handleFileUpload} />
       </div>
 
-      {step === 'upload' ? (
+      {step === 'header' ? (
+        <div className="card" style={{ maxWidth: '600px', margin: '2rem auto', padding: '2rem' }}>
+          <h3 style={{ marginBottom: '1.5rem', textAlign: 'center' }}>Header Validation</h3>
+          <p style={{ fontSize: '0.9rem', color: '#666', marginBottom: '2rem', textAlign: 'center' }}>
+            Please confirm the legal entity and billing currency for this statement.
+          </p>
+
+          <div style={{ display: 'grid', gap: '1.5rem' }}>
+            <div className="form-group">
+              <label>Company / Legal Entity</label>
+              <select
+                value={selectedEntityId}
+                onChange={e => setSelectedEntityId(e.target.value)}
+                style={{ width: '100%', padding: '0.6rem' }}
+              >
+                {availableEntities.map(e => (
+                  <option key={e.id} value={e.id}>{e.code} - {e.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Billing Currency (Base Currency for AI Extraction)</label>
+              <select
+                value={selectedCurrency}
+                onChange={e => setSelectedCurrency(e.target.value)}
+                style={{ width: '100%', padding: '0.6rem' }}
+              >
+                {availableCurrencies.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+                {!availableCurrencies.includes('EUR') && <option value="EUR">EUR</option>}
+              </select>
+              <small style={{ color: '#888', marginTop: '4px', display: 'block' }}>
+                AI will prioritize this currency for billing amounts.
+              </small>
+            </div>
+
+            <div style={{ marginTop: '1rem', display: 'flex', gap: '1rem' }}>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                disabled={!selectedEntityId || !selectedCurrency}
+                onClick={() => setStep('upload')}
+              >
+                Start Upload & Extraction
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : step === 'upload' ? (
         <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginBottom: '1.5rem' }}>
+            <span className="badge" style={{ background: '#f0f7ff', color: '#0078d4' }}>🏢 {activeEntity.name}</span>
+            <span className="badge" style={{ background: '#f0f7ff', color: '#0078d4' }}>💰 {selectedCurrency}</span>
+            <button
+              className="btn btn-outline"
+              style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+              onClick={() => setStep('header')}
+            >
+              Change
+            </button>
+          </div>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📄</div>
-          <h3>Upload Card Statement (CSV)</h3>
-          <p style={{ color: '#666', marginBottom: '1.5rem' }}>Format: Date, Vendor, Amount, Currency, Category</p>
+          <h3>Upload Card Statement (CSV, PDF, Image)</h3>
+          <p style={{ color: '#666', marginBottom: '1.5rem' }}>The AI will extract line items specifically for the selected entity.</p>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
             <button className="btn btn-primary" onClick={() => document.getElementById('statement-upload').click()}>
               Choose File & Import
             </button>
             <button className="btn btn-outline" onClick={() => {
-              // Quick simulation option for internal testing
               setTransactions([
                 { id: 'TX-SIM-1', date: '2024-03-01', vendor: 'Shell Frankfurt', amount: 65.20, currency: 'EUR', billing_amount: 65.20, billing_currency: 'EUR', suggestedType: 'Fuel' },
                 { id: 'TX-SIM-2', date: '2024-03-02', vendor: 'Lufthansa Airlines', amount: 320.00, currency: 'EUR', billing_amount: 320.00, billing_currency: 'EUR', suggestedType: 'Flight' }
@@ -1420,8 +1496,8 @@ const ImportPortal = ({ entities, user, expenseTypes, onImportComplete }) => {
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
             <div>
-              <h3>Review Extracted Lines: Amex_Feb.xlsx</h3>
-              <p style={{ fontSize: '0.8rem', color: '#666' }}>Matched {transactions.length} transactions for {entities.find(e => e.id == user.entityId)?.name}</p>
+              <h3>Review Extracted Lines</h3>
+              <p style={{ fontSize: '0.8rem', color: '#666' }}>Matched {transactions.length} transactions for <strong>{activeEntity?.name} ({selectedCurrency})</strong></p>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button className="btn btn-outline" disabled={isUploading} onClick={() => setStep('upload')}>Cancel</button>
