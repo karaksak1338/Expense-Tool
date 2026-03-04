@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0037</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0038</div>
       </div>
     </div>
   );
@@ -330,7 +330,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0037</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0038</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -3579,7 +3579,7 @@ function App() {
             <div className="card">
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr style={{ textAlign: 'left' }}><th>ID</th><th>Title</th><th>Total</th><th>Accountant</th><th>Claim Status</th><th>Approval</th><th>Action</th></tr></thead>
-                <tbody>{claims.filter(c => (user.roles?.includes('ADMIN') || c.userId == user.id) && (searchTerm === '' || c.title.toLowerCase().includes(searchTerm.toLowerCase()) || c.id.toLowerCase().includes(searchTerm.toLowerCase()))).map(c => (
+                <tbody>{claims.filter(c => (user.roles?.includes('ADMIN') || c.userId == user.id) && (searchTerm === '' || c.title.toLowerCase().includes(searchTerm.toLowerCase()) || c.id.toLowerCase().includes(searchTerm.toLowerCase()) || c.claimStatus.toLowerCase().includes(searchTerm.toLowerCase()) || c.approvalStatus.toLowerCase().includes(searchTerm.toLowerCase()))).map(c => (
                   <tr key={c.id}>
                     <td style={{ padding: '1rem 0' }}><code style={{ fontSize: '0.75rem' }}>{c.id}</code></td>
                     <td>{c.title} {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>}</td>
@@ -3749,7 +3749,7 @@ function App() {
 
             <div className="card" style={{ marginTop: '1.5rem' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr style={{ textAlign: 'left' }}><th>Staff</th><th>Approver</th><th>Accountant</th><th>Title</th><th>Claim Status</th><th>Action</th></tr></thead>
+                <thead><tr style={{ textAlign: 'left' }}><th>Staff</th><th>Approver</th><th>Accountant</th><th>Title</th><th>Claim Status</th><th>Approval Status</th><th>Action</th></tr></thead>
                 <tbody>{claims.filter(c => {
                   if (user.roles.includes('ADMIN')) {
                     // Admins see all for finance view
@@ -3766,7 +3766,9 @@ function App() {
                   return searchTerm === '' ||
                     c.title.toLowerCase().includes(searchLower) ||
                     c.id.toLowerCase().includes(searchLower) ||
-                    staffName.toLowerCase().includes(searchLower);
+                    staffName.toLowerCase().includes(searchLower) ||
+                    c.claimStatus.toLowerCase().includes(searchLower) ||
+                    c.approvalStatus.toLowerCase().includes(searchLower);
                 }).map(c => (
                   <tr key={c.id}>
                     <td>{users.find(u => u.id == c.userId)?.name}</td>
@@ -3804,7 +3806,8 @@ function App() {
                       </small>
                     </td>
                     <td>{c.title} {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>}</td>
-                    <td>{c.claimStatus}</td>
+                    <td><span className={`badge badge-${c.claimStatus.toLowerCase()}`}>{c.claimStatus}</span></td>
+                    <td><span className={`badge badge-${c.approvalStatus.replace(' ', '-').toLowerCase()}`}>{c.approvalStatus}</span></td>
                     <td><button className="btn btn-outline" onClick={() => setSelectedClaim({ ...c, isViewOnly: (c.claimStatus === CLAIM_STATUS.CLOSED || c.claimStatus === CLAIM_STATUS.ACCRUED) && !user.roles.includes('ADMIN') })}>Audit Detail</button></td>
                   </tr>
                 ))}</tbody>
@@ -3862,7 +3865,9 @@ function App() {
                     const matchesSearch = searchTerm === '' ||
                       c.title.toLowerCase().includes(searchLower) ||
                       c.id.toLowerCase().includes(searchLower) ||
-                      staffName.toLowerCase().includes(searchLower);
+                      staffName.toLowerCase().includes(searchLower) ||
+                      c.claimStatus.toLowerCase().includes(searchLower) ||
+                      c.approvalStatus.toLowerCase().includes(searchLower);
                     return isPending && matchesSearch;
                   }).map(c => (
                     <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '1rem 0', borderBottom: '1px solid #f0f0f0', alignItems: 'center' }}>
@@ -3882,7 +3887,10 @@ function App() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                        <span className="badge badge-pending">PENDING</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
+                          <span className={`badge badge-${c.claimStatus.toLowerCase()}`}>{c.claimStatus}</span>
+                          <span className={`badge badge-${c.approvalStatus.replace(' ', '-').toLowerCase()}`}>{c.approvalStatus}</span>
+                        </div>
                         <button className="btn btn-primary" onClick={() => setSelectedClaim(c)}>Review Details</button>
                       </div>
                     </div>
@@ -3918,7 +3926,10 @@ function App() {
                             })()}
                           </div>
                         </div>
-                        <span className={`badge badge-${c.approvalStatus.replace(' ', '-').toLowerCase()}`} style={{ fontSize: '0.65rem' }}>{c.approvalStatus}</span>
+                        <div style={{ display: 'flex', gap: '4px', flexDirection: 'column', alignItems: 'flex-end' }}>
+                          <span className={`badge badge-${c.claimStatus.toLowerCase()}`} style={{ fontSize: '0.65rem' }}>{c.claimStatus}</span>
+                          <span className={`badge badge-${c.approvalStatus.replace(' ', '-').toLowerCase()}`} style={{ fontSize: '0.65rem' }}>{c.approvalStatus}</span>
+                        </div>
                       </div>
                       <div style={{ fontSize: '0.7rem', color: '#888', marginTop: '4px' }}>By: {users.find(u => u.id == c.userId)?.name}</div>
                       <button className="btn btn-outline" style={{ fontSize: '0.7rem', width: '100%', marginTop: '8px', padding: '2px' }} onClick={() => setSelectedClaim(c)}>View Audit Details</button>
