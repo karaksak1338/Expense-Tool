@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0028</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0037</div>
       </div>
     </div>
   );
@@ -283,12 +283,20 @@ const SettingsView = ({ user, entities, users, userEntityApprovers, onBack }) =>
   );
 };
 
-const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerApprover }) => {
+const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerApprover, userEntityApprovers }) => {
   const hasRole = (role) => user.roles.includes(role);
 
-  const primaryApproverId = user.approverId || user.approver_id;
+  const primaryApproverId = (() => {
+    if (user.approverId || user.approver_id) return user.approverId || user.approver_id;
+    const explicitMapping = userEntityApprovers?.find(ua =>
+      String(ua.user_id) === String(user.id) &&
+      String(ua.entity_id) === String(user.entityId) &&
+      ua.approver_id
+    );
+    return explicitMapping ? explicitMapping.approver_id : null;
+  })();
   const primaryApprover = users?.find(u => String(u.id) === String(primaryApproverId));
-  const approverName = primaryApprover ? primaryApprover.name : (primaryApproverId && primaryApproverId !== 'N/A' && primaryApproverId !== 'undefined' ? 'Searching...' : 'N/A');
+  const approverName = primaryApprover ? primaryApprover.name : (primaryApproverId ? 'Searching...' : 'N/A');
 
   return (
     <aside className="sidebar">
@@ -322,7 +330,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0028</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0037</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -526,11 +534,21 @@ const DetailView = ({ claim, owner, approver, accountants, users, currentUser, e
               const displayApprover = approver || (users || []).find(u => u.id === claim.approver_id);
               return displayApprover && <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#fff', padding: '4px 8px', borderRadius: '4px', border: '1px solid #ddd' }}>Approver: <strong>{displayApprover.name}</strong></span>;
             })()}
-            {accountants?.length > 0 && (
-              <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#e0f2fe', padding: '4px 8px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
-                Accountant: <strong>{accountants.map(a => a.name).join(', ')}</strong>
-              </span>
-            )}
+            {(() => {
+              if (claim.accountant_id) {
+                const assignedAcc = (users || []).find(u => u.id === claim.accountant_id);
+                return assignedAcc ? (
+                  <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#e0f2fe', padding: '4px 8px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+                    Accountant: <strong>{assignedAcc.name}</strong>
+                  </span>
+                ) : null;
+              }
+              return accountants?.length > 0 && (
+                <span style={{ fontSize: '0.85rem', color: '#475569', fontWeight: '500', background: '#e0f2fe', padding: '4px 8px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+                  Accountant: <strong>{accountants.map(a => a.name).join(', ')}</strong>
+                </span>
+              );
+            })()}
           </div>
         </div>
 
@@ -680,6 +698,18 @@ const DetailView = ({ claim, owner, approver, accountants, users, currentUser, e
                       <span style={{ color: '#cbd5e1' }}>|</span>
                       <span className={`badge badge-${(log.newClaimStatus || 'NEW').toLowerCase()}`} style={{ fontSize: '0.7rem' }}>Claim: {log.newClaimStatus || 'NEW'}</span>
                       <span className={`badge badge-${(log.newApprovalStatus || 'N/A').replace(' ', '-').toLowerCase()}`} style={{ fontSize: '0.7rem' }}>Approval: {log.newApprovalStatus || 'N/A'}</span>
+                      {log.approverId && (
+                        <>
+                          <span style={{ color: '#cbd5e1' }}>|</span>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Approver: <strong>{users?.find(u => String(u.id) === String(log.approverId))?.name || 'Unknown'}</strong></span>
+                        </>
+                      )}
+                      {log.accountantId && (
+                        <>
+                          <span style={{ color: '#cbd5e1' }}>|</span>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Accountant: <strong>{users?.find(u => String(u.id) === String(log.accountantId))?.name || 'Unknown'}</strong></span>
+                        </>
+                      )}
                     </div>
                     {log.details?.error && <div style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: '4px' }}>⚠️ {log.details.error}</div>}
                     {log.comment && <div style={{ marginTop: '0.5rem', padding: '0.5rem', background: '#fff', borderLeft: '3px solid #e2e8f0', fontSize: '0.85rem', fontStyle: 'italic' }}>"{log.comment}"</div>}
@@ -735,12 +765,36 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
     expenses: []
   });
 
+  const [selectedApproverId, setSelectedApproverId] = useState(claim?.approver_id || claim?.approverId || '');
+  const [selectedAccountantId, setSelectedAccountantId] = useState(claim?.accountant_id || claim?.accountantId || '');
+
+  const resolvedApprover = useMemo(() => {
+    const explicitMapping = userEntityApprovers?.find(ua =>
+      String(ua.user_id) === String(activeUser.id) &&
+      String(ua.entity_id) === String(selectedEntityId) &&
+      ua.approver_id
+    );
+    if (explicitMapping) {
+      return users.find(u => u.id === explicitMapping.approver_id);
+    }
+    return users.find(u => u.id === activeUser.approverId || u.id === activeUser.approver_id) || null;
+  }, [activeUser, selectedEntityId, userEntityApprovers, users]);
+
+  const entityAccountants = useMemo(() => {
+    return users.filter(u =>
+      u.roles?.includes('ACCOUNTANT') &&
+      (String(u.entityId) === String(selectedEntityId) || (Array.isArray(u.assignedEntities) && u.assignedEntities.some(ae => String(ae) === String(selectedEntityId))))
+    );
+  }, [users, selectedEntityId]);
+
   // Critical for draft persistence: re-initialize state if the 'claim' prop changes (e.g. on edit)
   useEffect(() => {
     if (claim) {
       setFormData(claim);
       if (claim.entityId) setSelectedEntityId(claim.entityId);
       if (claim.currency) setSelectedCurrency(claim.currency);
+      if (claim.approver_id || claim.approverId) setSelectedApproverId(claim.approver_id || claim.approverId);
+      if (claim.accountant_id || claim.accountantId) setSelectedAccountantId(claim.accountant_id || claim.accountantId);
     }
   }, [claim]);
 
@@ -777,27 +831,6 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
     });
   }, [formData, mandatory, expenseTypes, activeEntity, availableCurrencies]);
 
-  const resolvedApprover = useMemo(() => {
-    if (!selectedEntityId || !users) return null;
-
-    // 1. Prioritize explicit mapping for the CURRENTLY SELECTED entity
-    if (userEntityApprovers) {
-      const explicitMapping = userEntityApprovers.find(ua => ua.user_id === user.id && ua.entity_id === selectedEntityId && ua.approver_id);
-      if (explicitMapping) {
-        const approver = users.find(u => u.id === explicitMapping.approver_id);
-        return approver ? { id: approver.id, name: approver.name } : null;
-      }
-    }
-
-    // 2. If it's their primary Home Entity, fallback to their profile's primary approver
-    if (user.entityId === selectedEntityId && user.approverId) {
-      const primaryApprover = users.find(u => u.id === user.approverId);
-      return primaryApprover ? { id: primaryApprover.id, name: primaryApprover.name } : null;
-    }
-
-    // 3. If no approver exists, block submission by returning null
-    return null;
-  }, [user, users, selectedEntityId, userEntityApprovers]);
 
   const updateExpense = (id, field, value) => {
     const updated = formData.expenses.map(e => e.id === id ? { ...e, [field]: value } : e);
@@ -853,7 +886,13 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
       }
     }
 
-    onSave({ ...formData, claimStatus: CLAIM_STATUS.SUBMITTED, approvalStatus: APPROVAL_STATUS.PENDING, approverId: resolvedApprover?.id });
+    onSave({
+      ...formData,
+      claimStatus: CLAIM_STATUS.SUBMITTED,
+      approvalStatus: APPROVAL_STATUS.PENDING,
+      approverId: selectedApproverId || resolvedApprover?.id || null,
+      accountantId: selectedAccountantId || (entityAccountants.length > 0 ? entityAccountants[0].id : null)
+    });
   };
 
   return (
@@ -868,14 +907,39 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                 return acc + (conv !== null ? conv : 0);
               }, 0).toFixed(2)}</strong>
             </p>
-            <div style={{ fontSize: '0.75rem', gap: '1rem', color: '#666', background: '#f5f5f5', padding: '0.3rem 0.6rem', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: '0.75rem', gap: '1rem', color: '#666', background: '#f5f5f5', padding: '0.4rem 0.8rem', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', border: '1px solid #e5e5e5' }}>
               <span>Role: <strong>{user.roles?.join(', ') || 'N/A'}</strong></span>
-              {activeEntity?.code && <span>Entity: <strong>{activeEntity.code} - {activeEntity.name}</strong></span>}
-              {resolvedApprover && <span>Approver: <strong>{resolvedApprover.name}</strong></span>}
+              {activeEntity?.code && (
+                <>
+                  <span style={{ color: '#ccc' }}>|</span>
+                  <span>Entity: <strong style={{ color: 'var(--primary)' }}>{activeEntity.code} - {activeEntity.name}</strong></span>
+                </>
+              )}
+              {activeEntity?.code && (
+                <>
+                  <span style={{ color: '#ccc' }}>|</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.9rem' }}>👤</span>
+                    Approver: <strong>{users?.find(u => u.id === (selectedApproverId || resolvedApprover?.id))?.name || 'N/A'}</strong>
+                  </span>
+                  <span style={{ color: '#ccc' }}>|</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span style={{ fontSize: '0.9rem' }}>📊</span>
+                    Accountant: <strong>
+                      {selectedAccountantId
+                        ? users?.find(u => u.id === selectedAccountantId)?.name || 'Unknown'
+                        : entityAccountants.length > 0 ? entityAccountants.map(a => a.name).join(', ') : 'Unassigned'}
+                    </strong>
+                  </span>
+                </>
+              )}
               {formData.statement_attachment && (
-                <span title="Statement attached" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: 'var(--primary)' }} onClick={() => onPreview && onPreview(formData.statement_attachment)}>
-                  <span style={{ fontSize: '1rem' }}>📄</span> Statement: <strong>{formData.statement_attachment}</strong>
-                </span>
+                <>
+                  <span style={{ color: '#ccc' }}>|</span>
+                  <span title="Statement attached" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: 'var(--primary)', fontWeight: '500' }} onClick={() => onPreview && onPreview(formData.statement_attachment)}>
+                    <span style={{ fontSize: '0.9rem' }}>📄</span> Statement: {formData.statement_attachment}
+                  </span>
+                </>
               )}
             </div>
           </div>
@@ -883,10 +947,18 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
             <button className="btn btn-outline" onClick={onCancel}>Cancel</button>
 
             {user.roles?.includes('ADMIN') && formData.claimStatus !== CLAIM_STATUS.NEW ? (
-              <button className="btn btn-warning" onClick={() => onSave(formData)}>Save Admin Edits</button>
+              <button className="btn btn-warning" onClick={() => onSave({
+                ...formData,
+                approverId: selectedApproverId || resolvedApprover?.id || null,
+                accountantId: selectedAccountantId || (entityAccountants.length > 0 ? entityAccountants[0].id : null)
+              })}>Save Admin Edits</button>
             ) : (
               <>
-                <button className="btn btn-outline" disabled={!formData.title} onClick={() => onDraft({ ...formData, approverId: resolvedApprover?.id })}>Save Draft</button>
+                <button className="btn btn-outline" disabled={!formData.title} onClick={() => onDraft({
+                  ...formData,
+                  approverId: selectedApproverId || resolvedApprover?.id || null,
+                  accountantId: selectedAccountantId || (entityAccountants.length > 0 ? entityAccountants[0].id : null)
+                })}>Save Draft</button>
                 <button className="btn btn-primary" onClick={handleSubmitAttempt}>Submit for Approval</button>
               </>
             )}
@@ -929,6 +1001,24 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                 {availableCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+            {user.roles?.includes('ADMIN') && formData.claimStatus !== CLAIM_STATUS.NEW && (
+              <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid #eee' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', color: '#b45309' }}>[ADMIN] Override Approver</label>
+                  <select value={selectedApproverId} onChange={e => setSelectedApproverId(e.target.value)} style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}>
+                    <option value="">None</option>
+                    {users?.filter(u => String(u.roles).includes('MANAGER')).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', color: '#0369a1' }}>[ADMIN] Override Accountant</label>
+                  <select value={selectedAccountantId} onChange={e => setSelectedAccountantId(e.target.value)} style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}>
+                    <option value="">None / Default</option>
+                    {users?.filter(u => String(u.roles).includes('ACCOUNTANT') && (String(u.entityId) === String(selectedEntityId) || (Array.isArray(u.assignedEntities) && u.assignedEntities.some(ae => String(ae) === String(selectedEntityId))))).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
           {formData.claim_type === 'CompanyCard' && (
@@ -2238,7 +2328,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
               {editingItem.type === 'user' && (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
-                    <div className="form-group"><label>Email Address</label><input type="email" value={editingItem.email || ''} onChange={e => setEditingItem({ ...editingItem, email: e.target.value })} /></div>
+                    <div className="form-group"><label>Email Address</label><input disabled={!editingItem.isNew} type="email" value={editingItem.email || ''} onChange={e => setEditingItem({ ...editingItem, email: e.target.value })} /></div>
                     <div className="form-group">
                       <label>Account Status</label>
                       <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: '#f5f5f5', padding: '0.4rem', borderRadius: '4px', cursor: 'pointer' }}>
@@ -2749,9 +2839,10 @@ function App() {
             // GLOBAL ADMIN EXCEPTION: Admin sees EVERYTHING across all users/entities
             if (user.roles.includes('ADMIN')) return true;
 
-            // Check if user is accountant for this entity
-            const isAccForEntity = userEntityApprovers.some(ua => ua.user_id === user.id && ua.entity_id === c.entity_id && ua.is_accountant);
-            if (user.roles.includes('ACCOUNTANT') && isAccForEntity && c.claim_status !== 'NEW') return true;
+            // Check if user is explicit accountant for this claim OR accountant for this entity via Matrix
+            const isAssignedAccountant = String(c.accountant_id) === String(user.id);
+            const isAccForEntity = userEntityApprovers.some(ua => String(ua.user_id) === String(user.id) && String(ua.entity_id) === String(c.entity_id) && ua.is_accountant);
+            if (user.roles.includes('ACCOUNTANT') && (isAssignedAccountant || isAccForEntity) && c.claim_status !== 'NEW') return true;
 
             // Check if user is explicit approver for this claim
             const isApprForUser = c.approver_id == user.id;
@@ -2772,6 +2863,8 @@ function App() {
           currency: c.currency || (c.expense_items && c.expense_items[0]?.claim_currency) || (c.id.includes('-') ? c.id.split('-').pop() : 'EUR'),
           claimStatus: c.claim_status,
           approvalStatus: c.approval_status,
+          approverId: c.approver_id,
+          accountantId: c.accountant_id,
           expenses: (c.expense_items || []).map(e => ({
             ...e,
             date: e.exchange_rate_date || e.date,
@@ -2788,9 +2881,9 @@ function App() {
     }
   };
 
-  const fetchData = () => {
-    fetchGlobalData();
-    if (user) fetchUserData();
+  const fetchData = async () => {
+    await fetchGlobalData();
+    if (user) await fetchUserData();
   };
 
   const handleSaveAdminItem = async (collection, item) => {
@@ -2956,6 +3049,10 @@ function App() {
         dbBase.approver_id = dbBase.approverId;
         delete dbBase.approverId;
       }
+      if (dbBase.accountantId !== undefined) {
+        dbBase.accountant_id = dbBase.accountantId || null;
+        delete dbBase.accountantId;
+      }
 
       // 1. Save Claim Base
       // Audit History logic for saving
@@ -2986,7 +3083,9 @@ function App() {
         prevApprovalStatus: currentClaimData?.approval_status || 'N/A',
         prevClaimStatus: currentClaimData?.claim_status || 'NEW',
         newApprovalStatus: dbBase.approval_status || dbBase.approvalStatus || 'N/A',
-        newClaimStatus: dbBase.claim_status || dbBase.claimStatus || 'NEW'
+        newClaimStatus: dbBase.claim_status || dbBase.claimStatus || 'NEW',
+        approverId: dbBase.approver_id || null,
+        accountantId: dbBase.accountant_id || null
       }];
 
       const finalCurrency = claimData.currency || (expenses && expenses[0]?.currency) || 'EUR';
@@ -2997,6 +3096,7 @@ function App() {
         user_id: dbBase.user_id || user.id,
         entity_id: dbBase.entity_id || null,
         approver_id: dbBase.approver_id || null,
+        accountant_id: dbBase.accountant_id || null,
         currency: finalCurrency,
         advance_amount: Number(dbBase.advance_amount) || 0,
         claim_status: dbBase.claim_status || CLAIM_STATUS.NEW,
@@ -3308,14 +3408,20 @@ function App() {
     if (!window.confirm("Are you sure you want to delete this draft? This cannot be undone.")) return;
     try {
       // 1. Find all associated receipts and reset them to UNALLOCATED
-      const { data: positions } = await supabase.from('expense_items').select('backlog_id').eq('claim_id', claimId);
+      const { data: positions, error: posErr } = await supabase.from('expense_items').select('backlog_id').eq('claim_id', claimId);
+      if (posErr) throw posErr;
+
       const backlogIds = (positions || []).map(p => p.backlog_id).filter(Boolean);
 
       if (backlogIds.length > 0) {
-        await supabase.from('receipts').update({ status: 'UNALLOCATED' }).in('id', backlogIds);
+        const { error: rErr } = await supabase.from('receipts').update({ status: 'UNALLOCATED' }).in('id', backlogIds);
+        if (rErr) throw rErr;
       }
 
-      // 2. The database should cascade delete the expense_items, but let's delete the claim.
+      // 2. Explicitly wipe expense items to prevent orphaned records before we delete the core claim
+      await supabase.from('expense_items').delete().eq('claim_id', claimId);
+
+      // 3. Delete the claim
       const { error } = await supabase.from('claims').delete().eq('id', claimId);
       if (error) throw error;
 
@@ -3342,7 +3448,7 @@ function App() {
 
   return (
     <div className="layout">
-      <Sidebar user={user} users={users} currentView={view} isManagerApprover={isManagerApprover} onViewChange={(v) => {
+      <Sidebar user={user} users={users} currentView={view} isManagerApprover={isManagerApprover} userEntityApprovers={userEntityApprovers} onViewChange={(v) => {
         setView(v);
         setSelectedClaim(null);
         if (v === 'new-claim' || v === 'receipts-backlog') fetchData();
@@ -3385,7 +3491,7 @@ function App() {
               ) : user.roles.includes('ACCOUNTANT') ? (
                 <>
                   {(() => {
-                    const scopedClaims = claims.filter(c => (user.assignedEntities?.includes(c.entityId) || c.entityId === user.entityId));
+                    const scopedClaims = claims.filter(c => (user.assignedEntities?.includes(c.entityId) || c.entityId === user.entityId || String(c.accountantId) === String(user.id)));
                     return (
                       <>
                         <div className="card" style={{ borderLeft: '4px solid #f59e0b' }}>
@@ -3480,6 +3586,13 @@ function App() {
                     <td style={{ fontWeight: 'bold' }}>{c.currency || '€'}{c.expenses.reduce((acc, e) => acc + Number(e.amount), 0).toFixed(2)}</td>
                     <td>
                       {(() => {
+                        let assignedName = null;
+                        if (c.accountantId || c.accountant_id) {
+                          const acc = users.find(u => String(u.id) === String(c.accountantId || c.accountant_id));
+                          if (acc) assignedName = acc.name;
+                        }
+                        if (assignedName) return <strong>{assignedName}</strong>;
+
                         const accs = getAccountantsForEntity(c.entityId);
                         return accs.length > 0 ? accs.map(a => a.name).join(', ') : <span style={{ color: '#999', fontSize: '0.8rem' }}>Unassigned</span>;
                       })()}
@@ -3489,7 +3602,7 @@ function App() {
                     <td>
                       <div style={{ display: 'flex', gap: '0.5rem' }}>
                         <button className="btn btn-outline" onClick={(e) => { e.stopPropagation(); setSelectedClaim(c) }}>View History</button>
-                        {(c.claimStatus === CLAIM_STATUS.NEW || c.approvalStatus === APPROVAL_STATUS.REJECTED) && (
+                        {(c.claimStatus === CLAIM_STATUS.NEW || c.approvalStatus === APPROVAL_STATUS.REJECTED || (c.claimStatus === CLAIM_STATUS.SUBMITTED && user.roles.includes('ADMIN') && c.approvalStatus !== APPROVAL_STATUS.APPROVED)) && (
                           <button className="btn btn-outline" onClick={(e) => { e.stopPropagation(); setImportedClaim(c); setView('new-claim'); setSelectedClaim(null); }}>✏️ Edit</button>
                         )}
                         {c.claimStatus === CLAIM_STATUS.NEW && (
@@ -3508,7 +3621,20 @@ function App() {
           <DetailView
             claim={selectedClaim}
             owner={users.find(u => u.id == selectedClaim.userId)}
-            approver={users.find(u => u.id === selectedClaim.approver_id)}
+            approver={(() => {
+              let app = users.find(u => u.id === selectedClaim.approver_id || u.id === selectedClaim.approverId);
+              if (app) return app;
+              const owner = users.find(u => u.id == selectedClaim.userId);
+              if (!owner) return null;
+              const explicitMapping = userEntityApprovers.find(ua => ua.user_id === owner.id && ua.entity_id === selectedClaim.entityId && ua.approver_id);
+              if (explicitMapping) {
+                return users.find(u => u.id === explicitMapping.approver_id);
+              }
+              if (owner.approverId || owner.approver_id) {
+                return users.find(u => u.id === owner.approverId || u.id === owner.approver_id);
+              }
+              return null;
+            })()}
             accountants={getAccountantsForEntity(selectedClaim.entityId)}
             users={users}
             currentUser={user}
@@ -3629,7 +3755,8 @@ function App() {
                     // Admins see all for finance view
                   } else {
                     const assigned = [String(user.entityId), ...(user.assignedEntities || []).filter(ae => ae).map(ae => String(ae))];
-                    if (!assigned.includes(String(c.entityId))) return false;
+                    const isDirectlyAssigned = String(c.accountantId || c.accountant_id) === String(user.id);
+                    if (!assigned.includes(String(c.entityId)) && !isDirectlyAssigned) return false;
                   }
 
                   if (c.claimStatus === CLAIM_STATUS.NEW && !user.roles.includes('ADMIN')) return false;
@@ -3643,8 +3770,39 @@ function App() {
                 }).map(c => (
                   <tr key={c.id}>
                     <td>{users.find(u => u.id == c.userId)?.name}</td>
-                    <td><small>{c.approver_id ? users.find(u => u.id == c.approver_id)?.name : 'N/A'}</small></td>
-                    <td><small>{getAccountantsForEntity(c.entityId).map(a => a.name).join(', ') || 'Unassigned'}</small></td>
+                    <td>
+                      <small>
+                        {(() => {
+                          if (c.approver_id) {
+                            const app = users.find(u => u.id == c.approver_id);
+                            if (app) return app.name;
+                          }
+                          const owner = users.find(u => u.id == c.userId);
+                          if (!owner) return 'N/A';
+                          const explicitMapping = userEntityApprovers.find(ua => ua.user_id == owner.id && ua.entity_id == c.entityId && ua.approver_id);
+                          if (explicitMapping) {
+                            const app = users.find(u => u.id == explicitMapping.approver_id);
+                            if (app) return app.name;
+                          }
+                          if (owner.approver_id || owner.approverId) {
+                            const app = users.find(u => u.id == (owner.approver_id || owner.approverId));
+                            if (app) return app.name;
+                          }
+                          return 'N/A';
+                        })()}
+                      </small>
+                    </td>
+                    <td>
+                      <small>
+                        {(() => {
+                          if (c.accountantId || c.accountant_id) {
+                            const acc = users.find(u => String(u.id) === String(c.accountantId || c.accountant_id));
+                            if (acc) return acc.name;
+                          }
+                          return getAccountantsForEntity(c.entityId).map(a => a.name).join(', ') || 'Unassigned';
+                        })()}
+                      </small>
+                    </td>
                     <td>{c.title} {c.statement_attachment && <span style={{ cursor: 'pointer', opacity: 0.7 }} title="View Statement" onClick={(e) => { e.stopPropagation(); setPreviewReceipt(c.statement_attachment); }}>📄</span>}</td>
                     <td>{c.claimStatus}</td>
                     <td><button className="btn btn-outline" onClick={() => setSelectedClaim({ ...c, isViewOnly: (c.claimStatus === CLAIM_STATUS.CLOSED || c.claimStatus === CLAIM_STATUS.ACCRUED) && !user.roles.includes('ADMIN') })}>Audit Detail</button></td>
@@ -3689,7 +3847,16 @@ function App() {
                 <h3>Pending Approvals</h3>
                 <div className="card" style={{ marginTop: '0.5rem' }}>
                   {claims.filter(c => {
-                    const isPending = c.approvalStatus === APPROVAL_STATUS.PENDING && c.userId != user.id && c.approver_id == user.id;
+                    let claimApproverId = c.approver_id;
+                    if (!claimApproverId) {
+                      const owner = users.find(u => u.id == c.userId);
+                      if (owner) {
+                        const explicitMapping = userEntityApprovers.find(ua => ua.user_id == owner.id && ua.entity_id == c.entityId && ua.approver_id);
+                        if (explicitMapping) claimApproverId = explicitMapping.approver_id;
+                        else claimApproverId = owner.approver_id || owner.approverId;
+                      }
+                    }
+                    const isPending = c.approvalStatus === APPROVAL_STATUS.PENDING && c.userId != user.id && String(claimApproverId) === String(user.id);
                     const searchLower = searchTerm.toLowerCase();
                     const staffName = users.find(u => u.id == c.userId)?.name || '';
                     const matchesSearch = searchTerm === '' ||
@@ -3705,6 +3872,10 @@ function App() {
                         <div style={{ fontSize: '0.75rem', color: '#666' }}>
                           Submitted: {c.submission_date ? new Date(c.submission_date).toLocaleDateString() : 'Draft'} |
                           Accountant: {(() => {
+                            if (c.accountantId || c.accountant_id) {
+                              const acc = users.find(u => String(u.id) === String(c.accountantId || c.accountant_id));
+                              if (acc) return <strong>{acc.name}</strong>;
+                            }
                             const accs = getAccountantsForEntity(c.entityId);
                             return accs.length > 0 ? accs.map(a => a.name).join(', ') : 'Unassigned';
                           })()}
@@ -3738,7 +3909,13 @@ function App() {
                         <div>
                           <strong style={{ fontSize: '0.85rem' }}>{c.title}</strong> by {users.find(u => u.id == c.userId)?.name}
                           <div style={{ fontSize: '0.7rem', color: '#888' }}>
-                            Accountant: {getAccountantsForEntity(c.entityId).map(a => a.name).join(', ') || 'Unassigned'}
+                            Accountant: {(() => {
+                              if (c.accountantId || c.accountant_id) {
+                                const acc = users.find(u => String(u.id) === String(c.accountantId || c.accountant_id));
+                                if (acc) return <strong>{acc.name}</strong>;
+                              }
+                              return getAccountantsForEntity(c.entityId).map(a => a.name).join(', ') || 'Unassigned';
+                            })()}
                           </div>
                         </div>
                         <span className={`badge badge-${c.approvalStatus.replace(' ', '-').toLowerCase()}`} style={{ fontSize: '0.65rem' }}>{c.approvalStatus}</span>
