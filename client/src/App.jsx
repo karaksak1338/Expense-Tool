@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0039</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0040</div>
       </div>
     </div>
   );
@@ -330,7 +330,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0039</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0040</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -810,6 +810,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
   }, [availableCurrencies, selectedCurrency, claim]);
 
   const [showLibrary, setShowLibrary] = useState(true);
+  const [showValidationErrors, setShowValidationErrors] = useState(false);
   const fileInputRef = React.useRef(null);
   const claimFileInputRef = React.useRef(null);
 
@@ -855,41 +856,81 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
     return Number(exp.amount) * (rate || 1);
   };
 
+  const validateForm = (isSubmit) => {
+    const errors = [];
+    if (!formData.title) errors.push("Claim Title is missing.");
+    if (!formData.entityId) errors.push("Legal Entity is not selected.");
+    if (availableCurrencies.length > 0 && !formData.currency) errors.push("Claim Currency is not selected.");
+
+    if (formData.expenses.length === 0) {
+      errors.push("At least one expense position is required.");
+    } else {
+      formData.expenses.forEach((exp, i) => {
+        const pos = `Position ${i + 1}`;
+        if (!exp.type) errors.push(`${pos}: Expense Type is missing.`);
+        if (!exp.date) errors.push(`${pos}: Date is missing.`);
+        if (!exp.currency) errors.push(`${pos}: Currency is missing.`);
+        if (!exp.amount || exp.amount <= 0) errors.push(`${pos}: Amount must be greater than 0.`);
+        if (!exp.receipt) errors.push(`${pos}: Receipt is missing.`);
+
+        if (exp.currency && formData.currency && exp.currency !== formData.currency) {
+          const rate = getExchangeRate(exp.currency, formData.currency, exp.date);
+          if (rate === null) {
+            errors.push(`${pos}: Missing Exchange Rate config for ${exp.currency} to ${formData.currency} (${exp.date?.substring(0, 7) || 'Unknown Date'}).`);
+          }
+        }
+
+        if (mandatory.project && !exp.project) errors.push(`${pos}: Project is mandatory for this entity.`);
+        if (mandatory.department && !exp.department) errors.push(`${pos}: Department is mandatory for this entity.`);
+
+        const typeCfg = expenseTypes.find(t => t.label === exp.type);
+        if (typeCfg?.requiresEntertainment) {
+          if (!exp.clients) errors.push(`${pos}: Entertainment - Clients missing.`);
+          if (!exp.purpose) errors.push(`${pos}: Entertainment - Business Purpose missing.`);
+          if (!exp.attendees) errors.push(`${pos}: Entertainment - Attendees number missing.`);
+        }
+      });
+    }
+
+    if (isSubmit) {
+      const finalApproverId = selectedApproverId || resolvedApprover?.id;
+      const finalAccountantId = selectedAccountantId || (entityAccountants.length > 0 ? entityAccountants[0].id : null);
+      if (!finalApproverId) errors.push("Submission Blocked: No Approver could be resolved for this claim.");
+      if (!finalAccountantId) errors.push("Submission Blocked: No Accountant could be resolved for this entity.");
+    }
+
+    return errors;
+  };
+
   const handleSubmitAttempt = (e) => {
     e.preventDefault();
-    if (!formData.title) return alert("Please enter a Claim Title.");
-    if (!formData.entityId || (availableCurrencies.length > 0 && !formData.currency)) {
-      return alert("Please select a Legal Entity and Claim Currency.");
-    }
-    if (formData.expenses.length === 0) return alert("Please add at least one expense position.");
-
-    for (let i = 0; i < formData.expenses.length; i++) {
-      const exp = formData.expenses[i];
-      if (!exp.type || !exp.amount || !exp.receipt || !exp.date || !exp.currency) {
-        return alert(`Position ${i + 1} is missing basic info (Type, Date, Currency, Amount, or Receipt).`);
-      }
-      if (exp.currency !== formData.currency) {
-        const rate = getExchangeRate(exp.currency, formData.currency, exp.date);
-        if (rate === null) {
-          return alert(`Position ${i + 1} is blocked: Missing Exchange Rate configuration for ${exp.currency} to ${formData.currency} for the period ${exp.date.substring(0, 7)}.`);
-        }
-      }
-      if (mandatory.project && !exp.project) {
-        return alert(`Position ${i + 1} is missing a mandatory Project.`);
-      }
-      if (mandatory.department && !exp.department) {
-        return alert(`Position ${i + 1} is missing a mandatory Department.`);
-      }
-      const typeCfg = expenseTypes.find(t => t.label === exp.type);
-      if (typeCfg?.requiresEntertainment && (!exp.clients || !exp.purpose || !exp.attendees)) {
-        return alert(`Position ${i + 1} is an Entertainment expense and requires Clients, Purpose, and Attendees details.`);
-      }
+    setShowValidationErrors(true);
+    const errors = validateForm(true);
+    if (errors.length > 0) {
+      alert("PLEASE FIX THE FOLLOWING ERRORS:\n\n" + errors.join("\n"));
+      return;
     }
 
     onSave({
       ...formData,
       claimStatus: CLAIM_STATUS.SUBMITTED,
       approvalStatus: APPROVAL_STATUS.PENDING,
+      approverId: selectedApproverId || resolvedApprover?.id || null,
+      accountantId: selectedAccountantId || (entityAccountants.length > 0 ? entityAccountants[0].id : null)
+    });
+  };
+
+  const handleDraftAttempt = (e) => {
+    e.preventDefault();
+    setShowValidationErrors(true);
+    const errors = validateForm(false);
+    if (errors.length > 0) {
+      alert("DRAFT SAVED WITH WARNINGS:\n\n" + errors.join("\n"));
+      // We still allow draft save!
+    }
+
+    onDraft({
+      ...formData,
       approverId: selectedApproverId || resolvedApprover?.id || null,
       accountantId: selectedAccountantId || (entityAccountants.length > 0 ? entityAccountants[0].id : null)
     });
@@ -954,11 +995,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
               })}>Save Admin Edits</button>
             ) : (
               <>
-                <button className="btn btn-outline" disabled={!formData.title} onClick={() => onDraft({
-                  ...formData,
-                  approverId: selectedApproverId || resolvedApprover?.id || null,
-                  accountantId: selectedAccountantId || (entityAccountants.length > 0 ? entityAccountants[0].id : null)
-                })}>Save Draft</button>
+                <button className="btn btn-outline" onClick={handleDraftAttempt}>Save Draft</button>
                 <button className="btn btn-primary" onClick={handleSubmitAttempt}>Submit for Approval</button>
               </>
             )}
@@ -970,32 +1007,32 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
         <div style={{ flex: showLibrary ? '5.5' : '1', transition: 'flex 0.3s ease', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 180px)' }}>
           <div className="card" style={{ marginBottom: '1.5rem', display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr 1fr', gap: '1rem', padding: '1rem 1.5rem' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Claim Title *</label>
-              <input type="text" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} placeholder="e.g. Q1 Travel Expenses" style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }} />
+              <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', color: showValidationErrors && !formData.title ? 'var(--error)' : 'inherit' }}>Claim Title *</label>
+              <input type="text" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} placeholder="e.g. Q1 Travel Expenses" style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', border: showValidationErrors && !formData.title ? '1px solid var(--error)' : undefined }} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Advance Amount (€)</label>
               <input type="number" value={formData.advanceAmount} onChange={e => setFormData({ ...formData, advanceAmount: e.target.value })} style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Legal Entity *</label>
+              <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', color: showValidationErrors && !selectedEntityId ? 'var(--error)' : 'inherit' }}>Legal Entity *</label>
               <select
                 value={selectedEntityId}
                 onChange={e => { setSelectedEntityId(e.target.value); setSelectedCurrency(''); }}
                 disabled={!!claim || (availableEntities.length === 1 && !activeUser.roles?.includes('ADMIN'))}
-                style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', border: showValidationErrors && !selectedEntityId ? '1px solid var(--error)' : undefined }}
               >
                 <option value="">Select Entity</option>
                 {availableEntities.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
               </select>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem' }}>Claim Currency *</label>
+              <label style={{ fontSize: '0.75rem', marginBottom: '0.2rem', color: showValidationErrors && availableCurrencies.length > 0 && !selectedCurrency ? 'var(--error)' : 'inherit' }}>Claim Currency *</label>
               <select
                 value={selectedCurrency}
                 onChange={e => setSelectedCurrency(e.target.value)}
                 disabled={!!claim || availableCurrencies.length <= 1}
-                style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem' }}
+                style={{ padding: '0.5rem 0.75rem', fontSize: '0.85rem', border: showValidationErrors && availableCurrencies.length > 0 && !selectedCurrency ? '1px solid var(--error)' : undefined }}
               >
                 <option value="">{availableCurrencies.length > 0 ? 'Select Currency' : 'N/A'}</option>
                 {availableCurrencies.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1161,21 +1198,21 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 1.5fr) minmax(130px, 1fr) minmax(180px, 1.5fr) minmax(140px, 1fr)', gap: '1.5rem', marginTop: '0.5rem' }}>
                       <div className="form-group">
-                        <label>Type *</label>
-                        <select value={exp.type} onChange={e => updateExpense(exp.id, 'type', e.target.value)}>
+                        <label style={{ color: showValidationErrors && !exp.type ? 'var(--error)' : 'inherit' }}>Type *</label>
+                        <select value={exp.type} onChange={e => updateExpense(exp.id, 'type', e.target.value)} style={{ border: showValidationErrors && !exp.type ? '1px solid var(--error)' : undefined }}>
                           <option value="">Choose Type</option>
                           {expenseTypes.map(t => <option key={t.id} value={t.label}>{t.label}</option>)}
                         </select>
                       </div>
                       <div className="form-group">
-                        <label>Date *</label>
-                        <input type="date" value={exp.date || ''} onChange={e => updateExpense(exp.id, 'date', e.target.value)} disabled={exp.immutable} title={exp.immutable ? "Locked by bank statement" : ""} />
+                        <label style={{ color: showValidationErrors && !exp.date ? 'var(--error)' : 'inherit' }}>Date *</label>
+                        <input type="date" value={exp.date || ''} onChange={e => updateExpense(exp.id, 'date', e.target.value)} disabled={exp.immutable} title={exp.immutable ? "Locked by bank statement" : ""} style={{ border: showValidationErrors && !exp.date ? '1px solid var(--error)' : undefined }} />
                       </div>
                       <div className="form-group">
-                        <label>Currency & Amount *</label>
+                        <label style={{ color: showValidationErrors && (!exp.currency || !exp.amount || exp.amount <= 0) ? 'var(--error)' : 'inherit' }}>Currency & Amount *</label>
                         <div style={{ display: 'flex' }}>
-                          <input type="text" value={exp.currency || ''} onChange={e => updateExpense(exp.id, 'currency', e.target.value.toUpperCase())} disabled={exp.immutable} placeholder="EUR" style={{ width: '80px', borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', textAlign: 'center', background: exp.immutable ? '#f3f4f6' : '#f9fafb', fontWeight: 'bold' }} title={exp.immutable ? "Locked by bank statement" : ""} />
-                          <input type="number" value={isNaN(exp.amount) ? '' : exp.amount} onChange={e => updateExpense(exp.id, 'amount', e.target.value)} disabled={exp.immutable} style={{ flex: 1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }} title={exp.immutable ? "Locked by bank statement" : ""} />
+                          <input type="text" value={exp.currency || ''} onChange={e => updateExpense(exp.id, 'currency', e.target.value.toUpperCase())} disabled={exp.immutable} placeholder="EUR" style={{ width: '80px', borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', textAlign: 'center', background: exp.immutable ? '#f3f4f6' : '#f9fafb', fontWeight: 'bold', border: showValidationErrors && !exp.currency ? '1px solid var(--error)' : undefined }} title={exp.immutable ? "Locked by bank statement" : ""} />
+                          <input type="number" value={isNaN(exp.amount) ? '' : exp.amount} onChange={e => updateExpense(exp.id, 'amount', e.target.value)} disabled={exp.immutable} style={{ flex: 1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, border: showValidationErrors && (!exp.amount || exp.amount <= 0) ? '1px solid var(--error)' : undefined }} title={exp.immutable ? "Locked by bank statement" : ""} />
                         </div>
                         {exp.payment_type === 'CompanyCard' ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
@@ -1213,7 +1250,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                         </select>
                       </div>
                       <div className="form-group">
-                        <label>Receipt Attachment</label>
+                        <label style={{ color: showValidationErrors && !exp.receipt ? 'var(--error)' : 'inherit' }}>Receipt Attachment {showValidationErrors && !exp.receipt && '*'}</label>
                         {exp.receipt ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: '#f3f4f6', padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                             <span style={{ fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => onPreview && onPreview(exp.receipt)}>📄</span>
@@ -1252,7 +1289,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                                 reader.readAsDataURL(file);
                               }
                             }} />
-                            <div style={{ flex: 1, border: '2px dashed #d1d5db', borderRadius: '8px', padding: '0.6rem', color: '#6b7280', cursor: 'pointer', textAlign: 'center', fontSize: '0.85rem', background: '#f9fafb', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => document.getElementById(`file-upload-${exp.id}`).click()} onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--primary)'; }} onMouseOut={e => { e.currentTarget.style.borderColor = '#d1d5db'; e.currentTarget.style.color = '#6b7280'; }}>
+                            <div style={{ flex: 1, border: showValidationErrors && !exp.receipt ? '2px dashed var(--error)' : '2px dashed #d1d5db', borderRadius: '8px', padding: '0.6rem', color: showValidationErrors && !exp.receipt ? 'var(--error)' : '#6b7280', cursor: 'pointer', textAlign: 'center', fontSize: '0.85rem', background: '#f9fafb', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => document.getElementById(`file-upload-${exp.id}`).click()} onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--primary)'; }} onMouseOut={e => { e.currentTarget.style.borderColor = showValidationErrors && !exp.receipt ? 'var(--error)' : '#d1d5db'; e.currentTarget.style.color = showValidationErrors && !exp.receipt ? 'var(--error)' : '#6b7280'; }}>
                               <span style={{ marginRight: '6px' }}>📎</span> Upload or drop
                             </div>
                             <button className="btn btn-outline" style={{ fontSize: '0.85rem', padding: '0.6rem' }} onClick={() => setShowLibrary(true)}>Library</button>
@@ -1269,15 +1306,15 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', marginTop: '0.5rem' }}>
                       <div className="form-group">
-                        <label>Project {mandatory.project && '*'}</label>
-                        <select value={exp.project} onChange={e => updateExpense(exp.id, 'project', e.target.value)}>
+                        <label style={{ color: showValidationErrors && mandatory.project && !exp.project ? 'var(--error)' : 'inherit' }}>Project {mandatory.project && '*'}</label>
+                        <select value={exp.project} onChange={e => updateExpense(exp.id, 'project', e.target.value)} style={{ border: showValidationErrors && mandatory.project && !exp.project ? '1px solid var(--error)' : undefined }}>
                           <option value="">Select Project</option>
                           {projects.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
                         </select>
                       </div>
                       <div className="form-group">
-                        <label>Department {mandatory.department && '*'}</label>
-                        <select value={exp.department} onChange={e => updateExpense(exp.id, 'department', e.target.value)}>
+                        <label style={{ color: showValidationErrors && mandatory.department && !exp.department ? 'var(--error)' : 'inherit' }}>Department {mandatory.department && '*'}</label>
+                        <select value={exp.department} onChange={e => updateExpense(exp.id, 'department', e.target.value)} style={{ border: showValidationErrors && mandatory.department && !exp.department ? '1px solid var(--error)' : undefined }}>
                           <option value="">Select Dept</option>
                           {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
                         </select>
@@ -1287,6 +1324,24 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                         <input type="text" value={exp.description || ''} onChange={e => updateExpense(exp.id, 'description', e.target.value)} />
                       </div>
                     </div>
+
+                    {/* Entertainment Specific Fields */}
+                    {typeCfg?.requiresEntertainment && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1.5fr', gap: '1.5rem', marginTop: '1rem', background: '#fdf4ff', padding: '1rem', borderRadius: '8px', border: '1px solid #f0abfc' }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label style={{ color: showValidationErrors && !exp.clients ? 'var(--error)' : '#a21caf', fontSize: '0.75rem' }}>Clients *</label>
+                          <input type="text" placeholder="e.g. John Doe (Acme Corp)" value={exp.clients || ''} onChange={e => updateExpense(exp.id, 'clients', e.target.value)} style={{ fontSize: '0.8rem', border: showValidationErrors && !exp.clients ? '1px solid var(--error)' : '1px solid #f0abfc' }} />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label style={{ color: showValidationErrors && !exp.attendees ? 'var(--error)' : '#a21caf', fontSize: '0.75rem' }}>Number of Attendees *</label>
+                          <input type="number" placeholder="2" value={exp.attendees || ''} onChange={e => updateExpense(exp.id, 'attendees', e.target.value)} style={{ fontSize: '0.8rem', border: showValidationErrors && !exp.attendees ? '1px solid var(--error)' : '1px solid #f0abfc' }} />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label style={{ color: showValidationErrors && !exp.purpose ? 'var(--error)' : '#a21caf', fontSize: '0.75rem' }}>Business Purpose *</label>
+                          <input type="text" placeholder="e.g. Contract Negotiation Dinner" value={exp.purpose || ''} onChange={e => updateExpense(exp.id, 'purpose', e.target.value)} style={{ fontSize: '0.8rem', border: showValidationErrors && !exp.purpose ? '1px solid var(--error)' : '1px solid #f0abfc' }} />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
