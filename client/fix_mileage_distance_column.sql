@@ -1,0 +1,1 @@
+ALTER TABLE public.expense_items ADD COLUMN IF NOT EXISTS distance DECIMAL(10,2) DEFAULT NULL;

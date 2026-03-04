@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0040</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0046</div>
       </div>
     </div>
   );
@@ -330,7 +330,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0040</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0046</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -587,11 +587,19 @@ const DetailView = ({ claim, owner, approver, accountants, users, currentUser, e
                           {e.project && `Project: ${e.project}`} {e.department && ` | Dept: ${e.department}`}
                         </small>
 
+                        {/* Mileage Details */}
+                        {typeCfg?.isMileage && e.distance && (
+                          <div style={{ marginTop: '0.4rem', padding: '0.4rem', background: '#f0fdf4', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid #bbf7d0', color: '#166534' }}>
+                            <strong>Distance:</strong> {e.distance} {entity?.mileage_unit || 'km'} × {entity?.mileage_rate || 0} {entity?.primary_currency || 'EUR'}
+                          </div>
+                        )}
+
                         {/* Entertainment Details */}
-                        {typeCfg?.requiresEntertainment && (e.purpose || e.attendees) && (
+                        {typeCfg?.requiresEntertainment && (e.purpose || e.attendees || e.clients) && (
                           <div style={{ marginTop: '0.4rem', padding: '0.4rem', background: '#f8fafc', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid #e2e8f0' }}>
-                            <div><strong>Purpose:</strong> {e.purpose}</div>
-                            <div><strong>Attendees:</strong> {e.attendees} {e.clients ? `(Clients: ${e.clients})` : ''}</div>
+                            {e.purpose && <div><strong>Purpose:</strong> {e.purpose}</div>}
+                            {e.attendees != null && <div><strong>Attendees:</strong> {e.attendees}</div>}
+                            {e.clients && <div><strong>Clients:</strong> {e.clients}</div>}
                           </div>
                         )}
                       </div>
@@ -614,9 +622,11 @@ const DetailView = ({ claim, owner, approver, accountants, users, currentUser, e
                       </div>
                     </div>
 
-                    <div style={{ marginBottom: '0.8rem', fontSize: '0.75rem', color: '#666' }}>
-                      {entity.name} Mapping: G/L <strong>{mapping?.glAccount || typeCfg?.defaultAccount || 'N/A'}</strong> | VAT <strong>{mapping?.vatRate ?? typeCfg?.defaultVat ?? 0}%</strong>
-                    </div>
+                    {mode !== 'staff' && (
+                      <div style={{ marginBottom: '0.8rem', fontSize: '0.75rem', color: '#666' }}>
+                        {entity.name} Mapping: G/L <strong>{mapping?.glAccount || typeCfg?.defaultAccount || 'N/A'}</strong> | VAT <strong>{mapping?.vatRate ?? typeCfg?.defaultVat ?? 0}%</strong>
+                      </div>
+                    )}
 
                     {/* Finance Audit View: Immutable AI Toggles & Overrides */}
                     {mode === 'finance' && aiMetadata && (
@@ -811,8 +821,29 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
 
   const [showLibrary, setShowLibrary] = useState(true);
   const [showValidationErrors, setShowValidationErrors] = useState(false);
+  const [localReceipts, setLocalReceipts] = useState([]);
   const fileInputRef = React.useRef(null);
   const claimFileInputRef = React.useRef(null);
+
+  useEffect(() => {
+    const syncReceipts = async () => {
+      let merged = [...(receipts || [])];
+      if (claim && claim.expenses) {
+        const backlogIds = claim.expenses.map(e => e.backlogId || e.backlog_id).filter(Boolean);
+        const missingIds = backlogIds.filter(id => !merged.some(r => r.id === id));
+        if (missingIds.length > 0) {
+          try {
+            const { data } = await supabase.from('receipts').select('*').in('id', missingIds);
+            if (data && data.length > 0) {
+              merged = [...merged, ...data];
+            }
+          } catch (err) { console.error('Failed to fetch attached receipts buffer', err); }
+        }
+      }
+      setLocalReceipts(merged);
+    };
+    syncReceipts();
+  }, [claim, receipts]);
 
   const mandatory = activeEntity.mandatoryFields || {};
 
@@ -858,7 +889,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
 
   const validateForm = (isSubmit) => {
     const errors = [];
-    if (!formData.title) errors.push("Claim Title is missing.");
+    if (!formData.title || !formData.title.trim()) errors.push("Claim Title is missing.");
     if (!formData.entityId) errors.push("Legal Entity is not selected.");
     if (availableCurrencies.length > 0 && !formData.currency) errors.push("Claim Currency is not selected.");
 
@@ -870,8 +901,15 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
         if (!exp.type) errors.push(`${pos}: Expense Type is missing.`);
         if (!exp.date) errors.push(`${pos}: Date is missing.`);
         if (!exp.currency) errors.push(`${pos}: Currency is missing.`);
-        if (!exp.amount || exp.amount <= 0) errors.push(`${pos}: Amount must be greater than 0.`);
-        if (!exp.receipt) errors.push(`${pos}: Receipt is missing.`);
+        const typeCfg = expenseTypes.find(t => t.label === exp.type);
+        if (typeCfg?.isMileage) {
+          if (!exp.distance || exp.distance <= 0) errors.push(`${pos}: Distance is required for Mileage.`);
+          if (!exp.description) errors.push(`${pos}: Route/Description is strictly required for Mileage.`);
+          if (!exp.amount || exp.amount <= 0) errors.push(`${pos}: Amount must be > 0 (Check Entity Rate).`);
+        } else {
+          if (!exp.amount || exp.amount <= 0) errors.push(`${pos}: Amount must be greater than 0.`);
+          if (!exp.receipt) errors.push(`${pos}: Receipt is missing.`);
+        }
 
         if (exp.currency && formData.currency && exp.currency !== formData.currency) {
           const rate = getExchangeRate(exp.currency, formData.currency, exp.date);
@@ -883,7 +921,6 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
         if (mandatory.project && !exp.project) errors.push(`${pos}: Project is mandatory for this entity.`);
         if (mandatory.department && !exp.department) errors.push(`${pos}: Department is mandatory for this entity.`);
 
-        const typeCfg = expenseTypes.find(t => t.label === exp.type);
         if (typeCfg?.requiresEntertainment) {
           if (!exp.clients) errors.push(`${pos}: Entertainment - Clients missing.`);
           if (!exp.purpose) errors.push(`${pos}: Entertainment - Business Purpose missing.`);
@@ -910,6 +947,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
       alert("PLEASE FIX THE FOLLOWING ERRORS:\n\n" + errors.join("\n"));
       return;
     }
+
 
     onSave({
       ...formData,
@@ -1208,40 +1246,57 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                         <label style={{ color: showValidationErrors && !exp.date ? 'var(--error)' : 'inherit' }}>Date *</label>
                         <input type="date" value={exp.date || ''} onChange={e => updateExpense(exp.id, 'date', e.target.value)} disabled={exp.immutable} title={exp.immutable ? "Locked by bank statement" : ""} style={{ border: showValidationErrors && !exp.date ? '1px solid var(--error)' : undefined }} />
                       </div>
-                      <div className="form-group">
-                        <label style={{ color: showValidationErrors && (!exp.currency || !exp.amount || exp.amount <= 0) ? 'var(--error)' : 'inherit' }}>Currency & Amount *</label>
-                        <div style={{ display: 'flex' }}>
-                          <input type="text" value={exp.currency || ''} onChange={e => updateExpense(exp.id, 'currency', e.target.value.toUpperCase())} disabled={exp.immutable} placeholder="EUR" style={{ width: '80px', borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', textAlign: 'center', background: exp.immutable ? '#f3f4f6' : '#f9fafb', fontWeight: 'bold', border: showValidationErrors && !exp.currency ? '1px solid var(--error)' : undefined }} title={exp.immutable ? "Locked by bank statement" : ""} />
-                          <input type="number" value={isNaN(exp.amount) ? '' : exp.amount} onChange={e => updateExpense(exp.id, 'amount', e.target.value)} disabled={exp.immutable} style={{ flex: 1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, border: showValidationErrors && (!exp.amount || exp.amount <= 0) ? '1px solid var(--error)' : undefined }} title={exp.immutable ? "Locked by bank statement" : ""} />
-                        </div>
-                        {exp.payment_type === 'CompanyCard' ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: '500' }}>
-                              Authoritative Bank Statement Line
-                            </div>
-                            {exp.currency !== exp.billing_currency && exp.billing_amount && (
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                <div className="badge" style={{ background: '#fef3c7', color: '#92400e', fontSize: '0.7rem', border: '1px solid #fcd34d', padding: '2px 6px', width: 'fit-content' }}>
-                                  ⚠️ Fiscal Mismatch: Posted to {exp.billing_currency}
-                                </div>
-                                <div className="badge" style={{ background: '#f3f4f6', color: '#374151', fontSize: '0.7rem', border: '1px solid #d1d5db', padding: '2px 6px', width: 'fit-content' }}>
-                                  Financial Posting: {exp.billing_currency} {Number(exp.billing_amount).toFixed(2)}
-                                </div>
-                              </div>
-                            )}
+                      {typeCfg?.isMileage ? (
+                        <div className="form-group">
+                          <label style={{ color: showValidationErrors && (!exp.distance || exp.distance <= 0) ? 'var(--error)' : '#166534' }}>Distance ({activeEntity?.mileage_unit || 'km'}) *</label>
+                          <div style={{ display: 'flex' }}>
+                            <input type="number" value={isNaN(exp.distance) ? '' : exp.distance} onChange={e => {
+                              const dist = parseFloat(e.target.value) || 0;
+                              const rate = activeEntity?.mileage_rate || 0;
+                              const amt = dist * rate;
+                              updateExpenseFields(exp.id, { distance: dist, amount: amt, currency: activeEntity?.primary_currency || formData.currency || 'EUR' });
+                            }} style={{ border: showValidationErrors && (!exp.distance || exp.distance <= 0) ? '1px solid var(--error)' : '1px solid #bbf7d0', width: '100%' }} />
                           </div>
-                        ) : (
-                          exp.currency && formData.currency && exp.currency !== formData.currency && (
-                            <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px', fontWeight: '500' }}>
-                              {getExchangeRate(exp.currency, formData.currency, exp.date) === null ? (
-                                <span style={{ color: 'var(--error)' }}>Missing FX Rate for {exp.date?.substring(0, 7)}!</span>
-                              ) : (
-                                <span>= {formData.currency} {calculateConvertedAmount(exp).toFixed(2)}</span>
+                          <div style={{ fontSize: '0.75rem', color: '#166534', marginTop: '4px', fontWeight: '500' }}>
+                            {exp.distance || 0} {activeEntity?.mileage_unit || 'km'} × {activeEntity?.mileage_rate || 0} {activeEntity?.primary_currency || 'EUR'} = {activeEntity?.primary_currency || 'EUR'} {((exp.distance || 0) * (activeEntity?.mileage_rate || 0)).toFixed(2)}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="form-group">
+                          <label style={{ color: showValidationErrors && (!exp.currency || !exp.amount || exp.amount <= 0) ? 'var(--error)' : 'inherit' }}>Currency & Amount *</label>
+                          <div style={{ display: 'flex' }}>
+                            <input type="text" value={exp.currency || ''} onChange={e => updateExpense(exp.id, 'currency', e.target.value.toUpperCase())} disabled={exp.immutable} placeholder="EUR" style={{ width: '80px', borderTopRightRadius: 0, borderBottomRightRadius: 0, borderRight: 'none', textAlign: 'center', background: exp.immutable ? '#f3f4f6' : '#f9fafb', fontWeight: 'bold', border: showValidationErrors && !exp.currency ? '1px solid var(--error)' : undefined }} title={exp.immutable ? "Locked by bank statement" : ""} />
+                            <input type="number" value={isNaN(exp.amount) ? '' : exp.amount} onChange={e => updateExpense(exp.id, 'amount', e.target.value)} disabled={exp.immutable} style={{ flex: 1, borderTopLeftRadius: 0, borderBottomLeftRadius: 0, border: showValidationErrors && (!exp.amount || exp.amount <= 0) ? '1px solid var(--error)' : undefined }} title={exp.immutable ? "Locked by bank statement" : ""} />
+                          </div>
+                          {exp.payment_type === 'CompanyCard' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: '500' }}>
+                                Authoritative Bank Statement Line
+                              </div>
+                              {exp.currency !== exp.billing_currency && exp.billing_amount && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                  <div className="badge" style={{ background: '#fef3c7', color: '#92400e', fontSize: '0.7rem', border: '1px solid #fcd34d', padding: '2px 6px', width: 'fit-content' }}>
+                                    ⚠️ Fiscal Mismatch: Posted to {exp.billing_currency}
+                                  </div>
+                                  <div className="badge" style={{ background: '#f3f4f6', color: '#374151', fontSize: '0.7rem', border: '1px solid #d1d5db', padding: '2px 6px', width: 'fit-content' }}>
+                                    Financial Posting: {exp.billing_currency} {Number(exp.billing_amount).toFixed(2)}
+                                  </div>
+                                </div>
                               )}
                             </div>
-                          )
-                        )}
-                      </div>
+                          ) : (
+                            exp.currency && formData.currency && exp.currency !== formData.currency && (
+                              <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '4px', fontWeight: '500' }}>
+                                {getExchangeRate(exp.currency, formData.currency, exp.date) === null ? (
+                                  <span style={{ color: 'var(--error)' }}>Missing FX Rate for {exp.date?.substring(0, 7)}!</span>
+                                ) : (
+                                  <span>= {formData.currency} {calculateConvertedAmount(exp).toFixed(2)}</span>
+                                )}
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
                       <div className="form-group">
                         <label>Payment</label>
                         <select value={exp.payment_type || (exp.payment === 'COMPANY_CREDITCARD' ? 'CompanyCard' : 'CashReimbursement')} onChange={e => updateExpense(exp.id, 'payment_type', e.target.value)} disabled={exp.immutable}>
@@ -1250,7 +1305,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                         </select>
                       </div>
                       <div className="form-group">
-                        <label style={{ color: showValidationErrors && !exp.receipt ? 'var(--error)' : 'inherit' }}>Receipt Attachment {showValidationErrors && !exp.receipt && '*'}</label>
+                        <label style={{ color: showValidationErrors && !typeCfg?.isMileage && !exp.receipt ? 'var(--error)' : 'inherit' }}>Receipt Attachment {typeCfg?.isMileage ? '' : (showValidationErrors && !exp.receipt && '*')}</label>
                         {exp.receipt ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: '#f3f4f6', padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
                             <span style={{ fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => onPreview && onPreview(exp.receipt)}>📄</span>
@@ -1289,7 +1344,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                                 reader.readAsDataURL(file);
                               }
                             }} />
-                            <div style={{ flex: 1, border: showValidationErrors && !exp.receipt ? '2px dashed var(--error)' : '2px dashed #d1d5db', borderRadius: '8px', padding: '0.6rem', color: showValidationErrors && !exp.receipt ? 'var(--error)' : '#6b7280', cursor: 'pointer', textAlign: 'center', fontSize: '0.85rem', background: '#f9fafb', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => document.getElementById(`file-upload-${exp.id}`).click()} onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--primary)'; }} onMouseOut={e => { e.currentTarget.style.borderColor = showValidationErrors && !exp.receipt ? 'var(--error)' : '#d1d5db'; e.currentTarget.style.color = showValidationErrors && !exp.receipt ? 'var(--error)' : '#6b7280'; }}>
+                            <div style={{ flex: 1, border: showValidationErrors && !typeCfg?.isMileage && !exp.receipt ? '2px dashed var(--error)' : '2px dashed #d1d5db', borderRadius: '8px', padding: '0.6rem', color: showValidationErrors && !typeCfg?.isMileage && !exp.receipt ? 'var(--error)' : '#6b7280', cursor: 'pointer', textAlign: 'center', fontSize: '0.85rem', background: '#f9fafb', transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => document.getElementById(`file-upload-${exp.id}`).click()} onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.color = 'var(--primary)'; }} onMouseOut={e => { e.currentTarget.style.borderColor = showValidationErrors && !typeCfg?.isMileage && !exp.receipt ? 'var(--error)' : '#d1d5db'; e.currentTarget.style.color = showValidationErrors && !typeCfg?.isMileage && !exp.receipt ? 'var(--error)' : '#6b7280'; }}>
                               <span style={{ marginRight: '6px' }}>📎</span> Upload or drop
                             </div>
                             <button className="btn btn-outline" style={{ fontSize: '0.85rem', padding: '0.6rem' }} onClick={() => setShowLibrary(true)}>Library</button>
@@ -1299,10 +1354,12 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                     </div>
 
                     {/* Entity-Specific Dimensions */}
-                    <div style={{ margin: '1.5rem 0 1rem 0', background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', color: '#475569', display: 'flex', alignItems: 'center' }}>
-                      <span style={{ marginRight: '8px' }}>🏢</span>
-                      Financial Dimensions for {activeEntity.name}: <strong style={{ marginLeft: '6px' }}>GL {localGL}</strong> <span style={{ margin: '0 8px', color: '#cbd5e1' }}>|</span> <strong>VAT {localVAT}%</strong>
-                    </div>
+                    {(user.roles?.includes('ACCOUNTANT') || user.roles?.includes('ADMIN')) && (
+                      <div style={{ margin: '1.5rem 0 1rem 0', background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.8rem', color: '#475569', display: 'flex', alignItems: 'center' }}>
+                        <span style={{ marginRight: '8px' }}>🏢</span>
+                        Financial Dimensions for {activeEntity.name}: <strong style={{ marginLeft: '6px' }}>GL {localGL}</strong> <span style={{ margin: '0 8px', color: '#cbd5e1' }}>|</span> <strong>VAT {localVAT}%</strong>
+                      </div>
+                    )}
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', marginTop: '0.5rem' }}>
                       <div className="form-group">
@@ -1320,8 +1377,8 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                         </select>
                       </div>
                       <div className="form-group">
-                        <label>Description</label>
-                        <input type="text" value={exp.description || ''} onChange={e => updateExpense(exp.id, 'description', e.target.value)} />
+                        <label style={{ color: showValidationErrors && typeCfg?.isMileage && !exp.description ? 'var(--error)' : 'inherit' }}>{typeCfg?.isMileage ? 'Route Details (From/To) *' : 'Description'}</label>
+                        <input type="text" value={exp.description || ''} onChange={e => updateExpense(exp.id, 'description', e.target.value)} style={{ border: showValidationErrors && typeCfg?.isMileage && !exp.description ? '1px solid var(--error)' : undefined }} placeholder={typeCfg?.isMileage ? "e.g. Head Office to Branch A" : ""} />
                       </div>
                     </div>
 
@@ -1367,7 +1424,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
             <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '1rem' }}>Drag a receipt onto an expense card.</p>
 
             <div style={{ flex: 1, overflowY: 'auto', paddingRight: '0.2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {(receipts || []).filter(r => !formData.expenses.some(e => e.backlogId === r.id)).map(r => (
+              {(localReceipts || []).filter(r => !formData.expenses.some(e => e.backlogId === r.id || e.backlog_id === r.id)).map(r => (
                 <div
                   key={r.id}
                   draggable
@@ -2316,6 +2373,22 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                       </label>
                     </div>
                   </div>
+                  <div className="form-group" style={{ marginTop: '1rem', background: '#f0fdf4', padding: '1rem', border: '1px solid #bbf7d0', borderRadius: '4px' }}>
+                    <label style={{ fontWeight: 'bold', color: '#166534' }}>Mileage Allowances 🚗</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 1fr', gap: '1rem', marginTop: '0.8rem', alignItems: 'center' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label style={{ fontSize: '0.8rem', color: '#166534' }}>Standard Rate (e.g. 0.30)</label>
+                        <input type="number" step="0.01" value={editingItem.mileage_rate || ''} onChange={e => setEditingItem({ ...editingItem, mileage_rate: parseFloat(e.target.value) || 0 })} style={{ padding: '0.4rem', border: '1px solid #bbf7d0' }} />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label style={{ fontSize: '0.8rem', color: '#166534' }}>Distance Unit</label>
+                        <select value={editingItem.mileage_unit || 'km'} onChange={e => setEditingItem({ ...editingItem, mileage_unit: e.target.value })} style={{ padding: '0.4rem', border: '1px solid #bbf7d0' }}>
+                          <option value="km">Kilometers (km)</option>
+                          <option value="mi">Miles (mi)</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
                   <div className="form-group" style={{ marginTop: '1rem', background: '#f5f7fa', padding: '1rem', border: '1px solid #dcdfe6', borderRadius: '4px' }}>
                     <label style={{ fontWeight: 'bold', color: 'var(--primary)' }}>AI Processing & Audit Policies 🤖</label>
                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px, 1fr) 1fr', gap: '1rem', marginTop: '0.8rem', alignItems: 'center' }}>
@@ -2539,9 +2612,14 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                     <div className="form-group"><label>G/L Account</label><input value={editingItem.defaultAccount || ''} onChange={e => setEditingItem({ ...editingItem, defaultAccount: e.target.value })} /></div>
                     <div className="form-group"><label>Default VAT (%)</label><input type="number" value={editingItem.defaultVat || 0} onChange={e => setEditingItem({ ...editingItem, defaultVat: e.target.value })} /></div>
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <input type="checkbox" checked={editingItem.requiresEntertainment} onChange={e => setEditingItem({ ...editingItem, requiresEntertainment: e.target.checked })} /> Requires Entertainment Details
-                  </label>
+                  <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input type="checkbox" checked={editingItem.requiresEntertainment} onChange={e => setEditingItem({ ...editingItem, requiresEntertainment: e.target.checked })} /> Requires Entertainment Details
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#166534' }}>
+                      <input type="checkbox" checked={editingItem.isMileage} onChange={e => setEditingItem({ ...editingItem, isMileage: e.target.checked })} /> Is Mileage Expense 🚗
+                    </label>
+                  </div>
                 </>
               )}
 
@@ -2924,6 +3002,7 @@ function App() {
             ...e,
             date: e.exchange_rate_date || e.date,
             payment_type: e.payment_type || (e.payment === 'COMPANY_CREDITCARD' ? 'CompanyCard' : 'CashReimbursement'),
+            distance: e.distance,
             backlogId: e.backlog_id
           }))
         })));
@@ -2947,8 +3026,8 @@ function App() {
 
       // Database Schema "Pick" sets to prevent 400 Errors from frontend-only noise
       const USER_COLS = ['id', 'name', 'email', 'roles', 'entity_id', 'approver_id', 'assigned_entities', 'is_active', 'offset_account_credit_card', 'offset_account_cash'];
-      const ENTITY_COLS = ['id', 'name', 'code', 'address', 'country', 'country_iso3', 'logo', 'mandatory_fields', 'expense_mappings', 'ai_enabled', 'duplicate_sensitivity', 'primary_currency', 'secondary_currency'];
-      const EXPENSE_TYPE_COLS = ['id', 'label', 'default_account', 'default_vat', 'requires_entertainment'];
+      const ENTITY_COLS = ['id', 'name', 'code', 'address', 'country', 'country_iso3', 'logo', 'mandatory_fields', 'expense_mappings', 'ai_enabled', 'duplicate_sensitivity', 'primary_currency', 'secondary_currency', 'mileage_rate', 'mileage_unit'];
+      const EXPENSE_TYPE_COLS = ['id', 'label', 'default_account', 'default_vat', 'requires_entertainment', 'isMileage'];
       const EXCHANGE_RATE_COLS = ['id', 'from_currency', 'to_currency', 'exchange_rate', 'rate_month', 'rate_year', 'rate_type', 'source', 'created_by'];
       const AI_PROMPT_COLS = ['id', 'prompt_type', 'prompt_text', 'is_active', 'tokens_estimate'];
 
@@ -3220,6 +3299,7 @@ function App() {
             project: e.project,
             department: e.department,
             description: e.description,
+            distance: e.distance ? Number(e.distance) : null,
             backlog_id: e.backlogId || e.backlog_id,
             clients: e.clients,
             attendees: e.attendees ? Number(e.attendees) : null,
