@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0038</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0039</div>
       </div>
     </div>
   );
@@ -330,7 +330,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0038</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0039</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -3749,7 +3749,7 @@ function App() {
 
             <div className="card" style={{ marginTop: '1.5rem' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr style={{ textAlign: 'left' }}><th>Staff</th><th>Approver</th><th>Accountant</th><th>Title</th><th>Claim Status</th><th>Approval Status</th><th>Action</th></tr></thead>
+                <thead><tr style={{ textAlign: 'left' }}><th>ID</th><th>Staff</th><th>Approver</th><th>Accountant</th><th>Title</th><th>Claim Status</th><th>Approval Status</th><th>Action</th></tr></thead>
                 <tbody>{claims.filter(c => {
                   if (user.roles.includes('ADMIN')) {
                     // Admins see all for finance view
@@ -3771,6 +3771,7 @@ function App() {
                     c.approvalStatus.toLowerCase().includes(searchLower);
                 }).map(c => (
                   <tr key={c.id}>
+                    <td style={{ padding: '1rem 0' }}><code style={{ fontSize: '0.75rem' }}>{c.id}</code></td>
                     <td>{users.find(u => u.id == c.userId)?.name}</td>
                     <td>
                       <small>
