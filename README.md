@@ -5,6 +5,7 @@ A modern, production-ready expense management platform built for speed, transpar
 ## 🏛️ Architecture
 
 - **Frontend**: React 19 + Vite (Fast, responsive UI with Glassmorphism aesthetics).
+- **Native Wrappers**: Ionic Capacitor (Compile web assets directly into `ios` and `android` native modules).
 - **Backend**: Supabase (PostgreSQL, Real-time data, and secure Auth).
 - **AI Integration**: Google Gemini (Direct proxy for receipt extraction).
 - **Compliance**: Full JSONB audit trails and D365FO ready synchronization.
@@ -50,7 +51,7 @@ A modern, production-ready expense management platform built for speed, transpar
    - Run `ai_prompts.sql` to initialize the default Gemini instruction set.
    - Run `migrate_data.sql` to populate initial test registry.
 
-### Running Locally
+### Running Locally (Web)
 
 ```bash
 # In the client directory
@@ -58,6 +59,28 @@ npm run dev
 ```
 
 The app will be available at `http://localhost:5173`.
+
+### Building for Native Mobile (iOS & Android)
+The application has been explicitly integrated with **Ionic Capacitor** to compile directly into native `.ipa` and `.apk` files.
+
+1. **Build the production web assets:**
+   ```bash
+   cd client
+   npm run build
+   ```
+
+2. **Sync the assets to the native Xcode / Android Studio templates:**
+   ```bash
+   npx cap sync
+   ```
+
+3. **Open the respective native IDEs to compile and run on emulators:**
+   ```bash
+   npx cap open android  # Opens Android Studio
+   # OR
+   npx cap open ios      # Opens Xcode (Requires MacOS)
+   ```
+   *Note: Because the native apps run on `capacitor://localhost`, relative network calls (like `/api/create-user`) must be updated to fully qualified remote backend endpoints in production.*
 
 ## 🛡️ Compliance & Tech Audit
 

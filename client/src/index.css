@@ -390,3 +390,127 @@ textarea:focus {
 .chip-remove:hover {
   color: var(--error);
 }
+
+/* Mobile Responsiveness Improvements */
+
+/* Fluid Tables & Containers */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+table {
+  width: 100%;
+  min-width: 600px; /* Prevent squishing on mobile */
+  border-collapse: collapse;
+}
+
+/* Universal Responsive Grid Strategy */
+.responsive-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+}
+
+.responsive-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .responsive-grid-3 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Layout transformation */
+  .layout {
+    flex-direction: column;
+  }
+
+  /* Bottom Navigation Bar Setup */
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    z-index: 1000;
+    flex-direction: row;
+    padding: 0.5rem;
+    gap: 0.2rem;
+    overflow-x: auto;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+  }
+
+  .sidebar h2 {
+    display: none; /* Hide logo/text in bottom nav to save space */
+  }
+
+  .sidebar nav {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .nav-item {
+    padding: 0.5rem;
+    white-space: nowrap;
+    text-align: center;
+    font-size: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    flex: 1;
+  }
+
+  /* Adjust Main Content to not get hidden under bottom nav */
+  .main-content {
+    padding: 1rem;
+    padding-bottom: 90px;
+    padding-top: 1.5rem;
+    width: 100%;
+    min-height: 100vh;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .header div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .frozen-header {
+    margin-top: -1rem;
+    padding: 1rem 0;
+  }
+
+  .card {
+    padding: 1rem;
+    border-radius: 8px;
+  }
+
+  /* Grid Collapsing */
+  .responsive-grid,
+  .responsive-grid-3 {
+    grid-template-columns: 1fr !important;
+    gap: 1rem;
+  }
+
+  /* Detailed Expense Form Collapsing */
+  .expense-line-item > div {
+    grid-template-columns: 1fr !important;
+  }
+}

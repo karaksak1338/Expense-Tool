@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Datacair Expense Tool</string>
+    <string name="title_activity_main">Datacair Expense Tool</string>
+    <string name="package_name">com.dcbi.expense</string>
+    <string name="custom_url_scheme">com.dcbi.expense</string>
+</resources>

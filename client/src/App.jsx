@@ -146,7 +146,7 @@ const LoginPage = ({ onLogin }) => {
             🛡️ SSO Login
           </button>
         </div>
-        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0046</div>
+        <div style={{ marginTop: '1.5rem', fontSize: '0.65rem', color: '#94a3b8' }}>v1.0.0048</div>
       </div>
     </div>
   );
@@ -188,7 +188,7 @@ const SettingsView = ({ user, entities, users, userEntityApprovers, onBack }) =>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '2rem', marginTop: '2rem' }}>
+      <div className="responsive-grid" style={{ marginTop: '2rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
           <div className="card">
             <h3>Profile Information</h3>
@@ -330,7 +330,7 @@ const Sidebar = ({ user, users, currentView, onViewChange, onLogout, isManagerAp
         )}
       </nav>
       <div style={{ marginTop: 'auto' }}>
-        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0046</div>
+        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textAlign: 'center', marginBottom: '0.5rem', fontWeight: '500' }}>v1.0.0048</div>
         <button className="btn btn-outline" style={{ width: '100%' }} onClick={onLogout}>Logout</button>
       </div>
     </aside>
@@ -391,7 +391,7 @@ const ClaimReport = ({ claim, user, entity }) => (
         </div>
       </div>
 
-      <div style={{ marginTop: '4rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3rem' }}>
+      <div className="responsive-grid" style={{ marginTop: '4rem', gap: '3rem' }}>
         <div style={{ borderTop: '1px solid #999', paddingTop: '0.5rem', textAlign: 'center' }}>
           <small>Manager Approval (E-Signed)</small><br />
           <strong>{claim.managerApprovedAt ? 'APPROVED' : 'PENDING'}</strong>
@@ -568,7 +568,7 @@ const DetailView = ({ claim, owner, approver, accountants, users, currentUser, e
 
                 return (
                   <div key={e.id} style={{ borderBottom: '1px solid #f0f0f0', padding: '1.5rem 0' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(100px, 1fr) 2fr 3fr 1fr 1fr', gap: '1rem', padding: '0.5rem 0', alignItems: 'start' }}>
+                    <div className="responsive-grid expense-line-item" style={{ gap: '1rem', padding: '0.5rem 0', alignItems: 'start' }}>
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
                         <span style={{ fontSize: '0.8rem', color: '#666', fontWeight: 'bold' }}>{e.exchange_rate_date || e.date || 'No Date'}</span>
                         <small style={{ color: '#888', fontSize: '0.7rem' }}>Expense Date</small>
@@ -671,7 +671,7 @@ const DetailView = ({ claim, owner, approver, accountants, users, currentUser, e
 
                     {/* Accountant Specific Adjustment Row (PRD 7.3) */}
                     {mode === 'finance' && (
-                      <div style={{ background: '#f9f9f9', padding: '0.75rem', borderRadius: '4px', marginTop: '0.5rem', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '1rem', fontSize: '0.85rem' }}>
+                      <div className="responsive-grid" style={{ background: '#f9f9f9', padding: '0.75rem', borderRadius: '4px', marginTop: '0.5rem', gap: '1rem', fontSize: '0.85rem' }}>
                         <div className="form-group">
                           <label>G/L Account</label>
                           <input type="text" defaultValue={mapping?.glAccount || typeCfg?.defaultAccount || '600000'} style={{ padding: '0.2rem' }} />
@@ -1361,7 +1361,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
                       </div>
                     )}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1.5rem', marginTop: '0.5rem' }}>
+                    <div className="responsive-grid-3" style={{ marginTop: '0.5rem' }}>
                       <div className="form-group">
                         <label style={{ color: showValidationErrors && mandatory.project && !exp.project ? 'var(--error)' : 'inherit' }}>Project {mandatory.project && '*'}</label>
                         <select value={exp.project} onChange={e => updateExpense(exp.id, 'project', e.target.value)} style={{ border: showValidationErrors && mandatory.project && !exp.project ? '1px solid var(--error)' : undefined }}>
@@ -1384,7 +1384,7 @@ const ClaimForm = ({ user, users, claim, entities, projects, departments, expens
 
                     {/* Entertainment Specific Fields */}
                     {typeCfg?.requiresEntertainment && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1.5fr', gap: '1.5rem', marginTop: '1rem', background: '#fdf4ff', padding: '1rem', borderRadius: '8px', border: '1px solid #f0abfc' }}>
+                      <div className="responsive-grid-3" style={{ marginTop: '1rem', background: '#fdf4ff', padding: '1rem', borderRadius: '8px', border: '1px solid #f0abfc' }}>
                         <div className="form-group" style={{ marginBottom: 0 }}>
                           <label style={{ color: showValidationErrors && !exp.clients ? 'var(--error)' : '#a21caf', fontSize: '0.75rem' }}>Clients *</label>
                           <input type="text" placeholder="e.g. John Doe (Acme Corp)" value={exp.clients || ''} onChange={e => updateExpense(exp.id, 'clients', e.target.value)} style={{ fontSize: '0.8rem', border: showValidationErrors && !exp.clients ? '1px solid var(--error)' : '1px solid #f0abfc' }} />
@@ -1843,11 +1843,11 @@ const ReceiptBacklog = ({ user, receipts, onAllocate, onUploadReceipt, onBack, o
           <div className="card" style={{ width: '500px', maxHeight: '90vh', overflowY: 'auto', padding: '2rem' }}>
             <h2 style={{ margin: '0 0 1.5rem 0' }}>Review & Edit Receipt</h2>
             <div className="form-group"><label>Vendor Name</label><input value={editingReceipt.vendor_suggestion || ''} onChange={e => setEditingReceipt({ ...editingReceipt, vendor_suggestion: e.target.value })} /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="responsive-grid" style={{ gap: '1rem' }}>
               <div className="form-group"><label>Transaction Date</label><input type="date" value={editingReceipt.transaction_date || ''} onChange={e => setEditingReceipt({ ...editingReceipt, transaction_date: e.target.value })} /></div>
               <div className="form-group"><label>Auto-Category</label><input value={editingReceipt.expense_type || ''} onChange={e => setEditingReceipt({ ...editingReceipt, expense_type: e.target.value })} /></div>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem' }}>
+            <div className="responsive-grid-3" style={{ gap: '1rem' }}>
               <div className="form-group"><label>Gross Amount</label><input type="number" step="0.01" value={editingReceipt.gross_amount || editingReceipt.amount_suggestion || ''} onChange={e => setEditingReceipt({ ...editingReceipt, gross_amount: e.target.value, amount_suggestion: e.target.value })} /></div>
               <div className="form-group"><label>VAT (%)</label><input type="number" step="0.1" value={editingReceipt.vat_percentage || ''} onChange={e => setEditingReceipt({ ...editingReceipt, vat_percentage: e.target.value })} /></div>
               <div className="form-group"><label>Currency</label><input value={editingReceipt.expense_currency || ''} onChange={e => setEditingReceipt({ ...editingReceipt, expense_currency: e.target.value.toUpperCase() })} /></div>
@@ -2088,6 +2088,16 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
       }
       return;
     }
+
+    if (editingItem.isSecurityMode) {
+      const payload = { ...editingItem };
+      delete payload.isNew;
+      delete payload.isSecurityMode;
+      onSave('ai_prompts', payload);
+      setEditingItem(null);
+      return;
+    }
+
     onSave(collectionMap[editingItem.type], editingItem);
     setEditingItem(null);
   };
@@ -2132,6 +2142,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
         <button className={`btn ${activeTab === 'exchangeRates' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('exchangeRates')}>Exchange Rates</button>
         {!isRestricted && <button className={`btn ${activeTab === 'aiPrompts' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('aiPrompts')}>AI Prompts</button>}
         <button className={`btn ${activeTab === 'approvers' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('approvers')}>Approver Policies</button>
+        {!isRestricted && <button className={`btn ${activeTab === 'security' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setActiveTab('security')} style={{ background: activeTab === 'security' ? '#0f172a' : 'transparent', color: activeTab === 'security' ? '#fff' : '#0f172a', borderColor: '#0f172a' }}>🔒 Security & Privacy</button>}
       </div>
 
       <div className="card" style={{ marginBottom: '1.5rem' }}>
@@ -2161,6 +2172,17 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                 setEditingItem(newItem);
               }}>+ Add {activeTab === 'entities' ? 'Entity' : activeTab === 'expenseTypes' ? 'Category' : activeTab === 'exchangeRates' ? 'Rate' : activeTab === 'aiPrompts' ? 'Prompt' : activeTab.slice(0, -1)}</button>
             )}
+            {activeTab === 'security' && (
+              <button className="btn btn-primary" onClick={async () => {
+                let securityRecord = aiPrompts.find(p => p.prompt_type === 'SYSTEM_SECURITY_CONFIG');
+                if (!securityRecord) {
+                  securityRecord = { type: 'aiPrompt', prompt_type: 'SYSTEM_SECURITY_CONFIG', prompt_text: JSON.stringify({ debug_mode: false }), isNew: true, isSecurityMode: true };
+                } else {
+                  securityRecord = { ...securityRecord, type: 'aiPrompt', isSecurityMode: true };
+                }
+                setEditingItem(securityRecord);
+              }}>Configure Security Settings</button>
+            )}
           </div>
         </div>
 
@@ -2175,10 +2197,27 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
               {activeTab === 'exchangeRates' && <><th>From Cur</th><th>To Cur</th><th>Rate multiplier</th><th>Period</th></>}
               {activeTab === 'aiPrompts' && !isRestricted && <><th>Prompt Type</th><th>Instructions Preview</th><th>Last Updated</th></>}
               {activeTab === 'approvers' && <><th>Staff</th><th>Legal Entity</th><th>Approver</th><th>Accountant</th></>}
-              <th>Actions</th>
+              {activeTab === 'security' && !isRestricted && <><th>Security Setting</th><th>Current Status</th><th>Description</th></>}
+              {activeTab !== 'security' && <th>Actions</th>}
             </tr>
           </thead>
           <tbody>
+            {activeTab === 'security' && !isRestricted && (
+              <tr style={{ borderBottom: '1px solid #f9f9f9', background: '#f8fafc' }}>
+                <td><strong>Diagnostic Console Logging</strong></td>
+                <td>
+                  {(() => {
+                    const sec = aiPrompts.find(p => p.prompt_type === 'SYSTEM_SECURITY_CONFIG');
+                    let isActive = false;
+                    try { if (sec) { isActive = JSON.parse(sec.prompt_text).debug_mode; } } catch (e) { }
+                    return isActive
+                      ? <span className="badge" style={{ background: '#fef08a', color: '#854d0e' }}>⚠️ ENABLED (Debug Mode)</span>
+                      : <span className="badge" style={{ background: '#dcfce7', color: '#166534' }}>✅ SECURED (Logs Suppressed)</span>;
+                  })()}
+                </td>
+                <td><small style={{ color: '#666' }}>Controls whether `console.log` data is visible in the browser Developer Tools. By default, this is secured to prevent data sniffing by third-party browser extensions.</small></td>
+              </tr>
+            )}
             {activeTab === 'entities' && filtered(assignedEntities).map(e => (
               <tr key={e.id} style={{ borderBottom: '1px solid #f9f9f9' }}>
                 <td style={{ fontSize: '1.5rem' }}>{e.logo || '🏢'}</td>
@@ -2455,7 +2494,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
 
               {editingItem.type === 'user' && (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
+                  <div className="responsive-grid" style={{ gap: '1rem' }}>
                     <div className="form-group"><label>Email Address</label><input disabled={!editingItem.isNew} type="email" value={editingItem.email || ''} onChange={e => setEditingItem({ ...editingItem, email: e.target.value })} /></div>
                     <div className="form-group">
                       <label>Account Status</label>
@@ -2465,7 +2504,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                       </label>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="responsive-grid" style={{ gap: '1rem' }}>
                     <div className="form-group">
                       <label>Primary Entity</label>
                       <select value={editingItem.entityId || ''} onChange={e => setEditingItem({ ...editingItem, entityId: e.target.value })}>
@@ -2483,7 +2522,7 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                   </div>
                   <div className="form-group">
                     <label style={{ fontWeight: 'bold' }}>Permissions & Roles</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    <div className="responsive-grid" style={{ gap: '0.5rem' }}>
                       {AVAILABLE_ROLES.map(role => (
                         <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem', background: '#f5f5f5', borderRadius: '4px' }}>
                           <input
@@ -2655,6 +2694,33 @@ const AdminCenter = ({ user, entities, users, projects, departments, expenseType
                   </div>
                 </>
               )}
+
+              {editingItem.isSecurityMode && (
+                <div style={{ padding: '1.5rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px' }}>
+                  <h3 style={{ color: '#b45309', marginTop: 0, marginBottom: '1rem' }}>Global Security Toggles</h3>
+                  {(() => {
+                    let config = { debug_mode: false };
+                    try { if (editingItem.prompt_text) config = JSON.parse(editingItem.prompt_text); } catch (e) { }
+                    return (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.95rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          style={{ width: '20px', height: '20px' }}
+                          checked={config.debug_mode}
+                          onChange={(e) => {
+                            const newCfg = { ...config, debug_mode: e.target.checked };
+                            setEditingItem({ ...editingItem, prompt_text: JSON.stringify(newCfg) });
+                          }}
+                        />
+                        <span style={{ fontWeight: '500' }}>Enable Diagnostic Console Logging</span>
+                      </label>
+                    );
+                  })()}
+                  <p style={{ fontSize: '0.8rem', color: '#92400e', marginTop: '1rem', lineHeight: 1.5 }}>
+                    <strong>Warning:</strong> Enabling this explicitly surfaces network requests, debug statements, and internal routing events to the browser developer tools. This is required for deep-dive frontend debugging, but should be disabled in production to protect against 3rd-party extensions or ad-blockers sniffing the application traffic.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '2rem' }}>
@@ -2712,6 +2778,39 @@ function App() {
   const [sessionBlobMap, setSessionBlobMap] = useState({});
   const [processingQueue, setProcessingQueue] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [securityConfig, setSecurityConfig] = useState({ debug_mode: false });
+
+  // Security Interceptor System (Runs BEFORE anything else logically heavily renders)
+  useEffect(() => {
+    const setupGlobalSecurity = async () => {
+      try {
+        const { data, error } = await supabase.from('ai_prompts').select('prompt_text').eq('prompt_type', 'SYSTEM_SECURITY_CONFIG').single();
+        let config = { debug_mode: false };
+        if (data && data.prompt_text) {
+          try { config = JSON.parse(data.prompt_text); } catch (e) { }
+        }
+        setSecurityConfig(config);
+
+        if (!config.debug_mode) {
+          window.console.log = function () { };
+          window.console.warn = function () { };
+          window.console.info = function () { };
+          window.console.error = function () { };
+          window.console.debug = function () { };
+          // Note: Initial native errors before this hook runs might still slip through, 
+          // but all subsequent React renders and data polling will be silenced.
+        }
+      } catch (err) {
+        // Fail closed. If we can't fetch config, default to secure (no logs).
+        window.console.log = function () { };
+        window.console.warn = function () { };
+        window.console.info = function () { };
+        window.console.error = function () { };
+        window.console.debug = function () { };
+      }
+    };
+    setupGlobalSecurity();
+  }, []);
 
   const getAccountantsForEntity = (entityId) => {
     return (users || []).filter(u =>
